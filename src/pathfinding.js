@@ -1,5 +1,6 @@
 import { haversineDistance } from './geo.js'
 import { snapToNearestEdge } from './graph.js'
+import { coordInAnyObstacle } from './obstacles.js'
 
 class MinHeap {
   constructor() { this.arr = []; }
@@ -44,7 +45,7 @@ class MinHeap {
   get size() { return this.arr.length; }
 }
 
-export function aStar(graph, startId, goalId) {
+export function aStar(graph, startId, goalId, options = {}) {
   const { nodes, adjacency } = graph;
   const n = nodes.length;
   const open = new MinHeap();
@@ -57,6 +58,9 @@ export function aStar(graph, startId, goalId) {
   open.push(startId, fScore[startId]);
 
   const closed = new Uint8Array(n);
+  const strategy = options.strategy || 'shortest';
+  const turnPenalty = options.turnPenalty ?? 15; // meters per radian
+  const minTurnAngle = options.minTurnAngle ?? (Math.PI / 12); // ~15 degrees threshold
 
   while (open.size) {
     const current = open.pop();
@@ -66,7 +70,11 @@ export function aStar(graph, startId, goalId) {
     if (closed[current]) continue;
     closed[current] = 1;
     for (const { to, w } of adjacency[current]) {
-      const tentative = gScore[current] + w;
+      const prev = cameFrom[current];
+      const extra = (strategy === 'fewest_turns')
+        ? computeTurnPenalty(prev, current, to, nodes, turnPenalty, minTurnAngle)
+        : 0;
+      const tentative = gScore[current] + w + extra;
       if (tentative < gScore[to]) {
         cameFrom[to] = current;
         gScore[to] = tentative;
@@ -112,6 +120,28 @@ function heuristic(aNode, bNode) {
   return haversineDistance([aNode.lon, aNode.lat], [bNode.lon, bNode.lat]);
 }
 
+function computeTurnPenalty(prevId, currentId, toId, nodes, perRadian, minTurnAngle) {
+  if (prevId === -1 || prevId === currentId) return 0;
+  const a = nodes[prevId];
+  const b = nodes[currentId];
+  const c = nodes[toId];
+  const ang = turnAngle([a.lon, a.lat], [b.lon, b.lat], [c.lon, c.lat]);
+  if (ang < minTurnAngle) return 0;
+  // Penalize proportional to angle magnitude
+  return perRadian * ang;
+}
+
+function turnAngle(a, b, c) {
+  const v1x = b[0] - a[0], v1y = b[1] - a[1];
+  const v2x = c[0] - b[0], v2y = c[1] - b[1];
+  const dot = v1x * v2x + v1y * v2y;
+  const n1 = Math.hypot(v1x, v1y);
+  const n2 = Math.hypot(v2x, v2y);
+  if (!n1 || !n2) return 0;
+  const cos = Math.min(1, Math.max(-1, dot / (n1 * n2)));
+  return Math.acos(cos);
+}
+
 function reconstructPath(cameFrom, current, graph, knownLength) {
   const { nodes, adjacency } = graph;
   const ids = [current];
@@ -139,9 +169,11 @@ function reconstructPath(cameFrom, current, graph, knownLength) {
 
 // Build a runtime graph by snapping arbitrary start/end coords onto nearest edges and
 // inserting temporary nodes in the middle of segments if needed.
-export function makeRuntimeGraphWithSnap(graph, startCoord, endCoord, epsilon = 1e-6) {
+export function makeRuntimeGraphWithSnap(graph, startCoord, endCoord, options = {}) {
+  const epsilon = options.epsilon ?? 1e-6;
   const nodes = graph.nodes.map(n => ({ ...n }));
   const adjacency = graph.adjacency.map(arr => arr.map(e => ({ ...e })));
+  const obstacles = options.obstacles ?? graph.obstacles ?? [];
 
   function ensureEdgeAnchor(aId, bId, t, point) {
     if (t <= epsilon) return aId;
@@ -161,8 +193,11 @@ export function makeRuntimeGraphWithSnap(graph, startCoord, endCoord, epsilon = 
   }
 
   function insertClickedCoord(coord) {
+    if (coordInAnyObstacle(coord, obstacles)) {
+      return { coordId: -1, anchorId: -1, error: 'point_in_obstacle' };
+    }
     const snap = snapToNearestEdge(graph, coord[0], coord[1]);
-    if (!snap) return { coordId: -1, anchorId: -1 };
+    if (!snap) return { coordId: -1, anchorId: -1, error: 'no_nearby_edge' };
     const { aId, bId, t, point } = snap;
     const anchorId = ensureEdgeAnchor(aId, bId, t, point);
     const coordId = nodes.length;
@@ -174,7 +209,10 @@ export function makeRuntimeGraphWithSnap(graph, startCoord, endCoord, epsilon = 
     return { coordId, anchorId };
   }
 
-  const { coordId: startId } = insertClickedCoord(startCoord);
-  const { coordId: endId } = insertClickedCoord(endCoord);
-  return { graph: { nodes, adjacency }, startId, endId };
+  const startRes = insertClickedCoord(startCoord);
+  const endRes = insertClickedCoord(endCoord);
+  const startId = startRes.coordId;
+  const endId = endRes.coordId;
+  const error = startRes.error || endRes.error || null;
+  return { graph: { nodes, adjacency }, startId, endId, error };
 }

@@ -1,10 +1,13 @@
 import { haversineDistance, roundCoordKey } from './geo.js'
+import { extractObstaclesFromGeoJSON, segmentIntersectsAnyObstacle, coordInAnyObstacle } from './obstacles.js'
 
 export function buildGraph(geojson, options = {}) {
   const precision = options.precision ?? 6;
+  const includeObstacles = options.includeObstacles ?? true;
   const nodeByKey = new Map();
   const nodes = []; // { id, lon, lat, key }
   const adjacency = []; // Array of arrays: adjacency[id] = [{ to, w }]
+  const obstacles = includeObstacles ? extractObstaclesFromGeoJSON(geojson, options) : [];
 
   function addNode(coord) {
     const key = roundCoordKey(coord, precision);
@@ -48,7 +51,28 @@ export function buildGraph(geojson, options = {}) {
     }
   }
 
-  return { nodes, adjacency, nodeByKey };
+  // Filter graph using obstacles: remove edges that cross obstacles and disconnect nodes inside obstacles
+  if (obstacles.length) {
+    const blockedNode = new Uint8Array(nodes.length);
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      if (coordInAnyObstacle([n.lon, n.lat], obstacles)) blockedNode[i] = 1;
+    }
+    for (let aId = 0; aId < adjacency.length; aId++) {
+      const list = adjacency[aId] || [];
+      const a = nodes[aId];
+      const filtered = [];
+      for (const { to: bId, w } of list) {
+        if (blockedNode[aId] || blockedNode[bId]) continue; // endpoints blocked
+        const b = nodes[bId];
+        const intersects = segmentIntersectsAnyObstacle([a.lon, a.lat], [b.lon, b.lat], obstacles);
+        if (!intersects) filtered.push({ to: bId, w });
+      }
+      adjacency[aId] = filtered;
+    }
+  }
+
+  return { nodes, adjacency, nodeByKey, obstacles };
 }
 
 // Lightweight spatial index using lat/lon grid buckets for fast nearest-node lookups.

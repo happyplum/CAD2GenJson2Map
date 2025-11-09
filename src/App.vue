@@ -29,6 +29,15 @@
         <button :disabled="!graphReady" @click="run">路径查询（A*）</button>
         <span class="pick-state">当前选择：{{ picking ? (picking === 'start' ? '起点' : '终点') : '无' }}</span>
       </div>
+      <div class="row">
+        <label>优化策略</label>
+        <select v-model="strategy">
+          <option value="shortest">最短距离</option>
+          <option value="fewest_turns">最少转弯</option>
+        </select>
+        <label>步行速度(m/s)</label>
+        <input v-model.number="walkSpeed" type="number" step="0.1" min="0.1" />
+      </div>
     </section>
 
     <section class="canvas-wrap">
@@ -39,7 +48,9 @@
       <h2>路径结果</h2>
       <div>节点数: {{ result.pathIds.length }}</div>
       <div>总长度: {{ (result.length/1000).toFixed(3) }} km</div>
-      <div>验证(Dijkstra):
+      <div>预计时间: {{ formatTime(result.timeSec) }}</div>
+      <div>查询耗时: {{ result.ms }} ms</div>
+      <div v-if="strategy === 'shortest'">验证(Dijkstra):
         <span :class="{ ok: validation.ok, bad: !validation.ok }">
           {{ validation.ok ? '通过' : '未通过' }}
         </span>
@@ -76,8 +87,10 @@ const endLat = ref(0)
 const picking = ref(null) // 'start' | 'end' | null
 const view = reactive({ scale: 1, tx: 0, ty: 0 })
 
-const result = reactive({ pathIds: [], pathCoords: [], length: 0 })
+const result = reactive({ pathIds: [], pathCoords: [], length: 0, ms: 0, timeSec: 0 })
 const validation = reactive({ ok: false, dijkstraLen: 0 })
+const strategy = ref('shortest')
+const walkSpeed = ref(1.4) // m/s
 
 async function loadGeoJSON() {
   const url = new URL('./data/lines.geojson', import.meta.url).href
@@ -96,7 +109,7 @@ async function build() {
   try {
     const t0 = performance.now()
     const geojson = await loadGeoJSON()
-    const g = buildGraph(geojson, { precision: 6 })
+    const g = buildGraph(geojson, { precision: 6, includeObstacles: true })
     graph.value = g
     spatial.value = buildSpatialIndex(g.nodes, 0.01)
     const t1 = performance.now()
@@ -218,28 +231,47 @@ function onCanvasClick(ev) {
 
 function run() {
   if (!graphReady.value) return
-  const { graph: rGraph, startId, endId } = makeRuntimeGraphWithSnap(
+  const { graph: rGraph, startId, endId, error } = makeRuntimeGraphWithSnap(
     graph.value,
     [startLon.value, startLat.value],
-    [endLon.value, endLat.value]
+    [endLon.value, endLat.value],
+    { obstacles: graph.value.obstacles }
   )
+  if (error === 'point_in_obstacle') {
+    alert('起点或终点位于阻碍区域，请重新选择可行点')
+    return
+  }
   if (startId === -1 || endId === -1) {
-    alert('无法定位到最近边，请检查数据')
+    alert('无法定位到最近边（或附近不可行），请检查数据或位置')
     return
   }
   const t0 = performance.now()
-  const res = aStar(rGraph, startId, endId)
+  const res = aStar(rGraph, startId, endId, { strategy: strategy.value })
   const t1 = performance.now()
   result.pathIds = res.pathIds
   result.pathCoords = res.pathCoords
   result.length = res.length
-  // validation via Dijkstra
-  const dres = dijkstra(rGraph, startId, endId)
-  validation.dijkstraLen = dres.length
-  validation.ok = Math.abs(dres.length - res.length) < 1e-6
+  result.ms = Math.round(t1 - t0)
+  result.timeSec = res.length / Math.max(0.1, walkSpeed.value)
+  // validation via Dijkstra (only for shortest strategy)
+  if (strategy.value === 'shortest') {
+    const dres = dijkstra(rGraph, startId, endId)
+    validation.dijkstraLen = dres.length
+    validation.ok = Math.abs(dres.length - res.length) < 1e-6
+  } else {
+    validation.dijkstraLen = 0
+    validation.ok = true
+  }
   drawNetwork()
   drawPath(result.pathCoords)
-  console.log('查询耗时', Math.round(t1 - t0), 'ms')
+  console.log('查询耗时', result.ms, 'ms')
+}
+
+function formatTime(sec) {
+  if (!isFinite(sec) || sec <= 0) return '—'
+  const m = Math.floor(sec / 60)
+  const s = Math.round(sec % 60)
+  return `${m}分${s}秒`
 }
 
 </script>
