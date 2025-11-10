@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { buildGraph } from '../graph.js'
-import { extractObstaclesFromGeoJSON, coordInAnyObstacle, segmentIntersectsAnyObstacle } from '../obstacles.js'
+import { extractObstaclesFromGeoJSON, pointInPolygon, segmentIntersectsAnyObstacle } from '../obstacles.js'
 
 describe('Obstacles parsing and graph filtering', () => {
   const squareObstacle = {
@@ -28,8 +28,8 @@ describe('Obstacles parsing and graph filtering', () => {
   it('extracts obstacle polygons from GeoJSON', () => {
     const obstacles = extractObstaclesFromGeoJSON(geojson)
     expect(obstacles.length).toBe(1)
-    expect(coordInAnyObstacle([1,1], obstacles)).toBe(true) // inside
-    expect(coordInAnyObstacle([-1,1], obstacles)).toBe(false) // outside
+    expect(pointInPolygon(1, 1, obstacles[0])).toBe(true) // inside
+    expect(pointInPolygon(-1, 1, obstacles[0])).toBe(false) // outside
   })
 
   it('filters edges crossing obstacles', () => {

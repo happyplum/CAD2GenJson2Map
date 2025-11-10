@@ -1,5 +1,5 @@
 import { haversineDistance, roundCoordKey } from './geo.js'
-import { extractObstaclesFromGeoJSON, segmentIntersectsAnyObstacle, coordInAnyObstacle } from './obstacles.js'
+import { extractObstaclesFromGeoJSON, segmentIntersectsAnyObstacle, pointInPolygon } from './obstacles.js'
 
 export function buildGraph(geojson, options = {}) {
   const precision = options.precision ?? 6;
@@ -56,7 +56,15 @@ export function buildGraph(geojson, options = {}) {
     const blockedNode = new Uint8Array(nodes.length);
     for (let i = 0; i < nodes.length; i++) {
       const n = nodes[i];
-      if (coordInAnyObstacle([n.lon, n.lat], obstacles)) blockedNode[i] = 1;
+      // Check if node is inside any obstacle polygon
+      let isInside = false;
+      for (const poly of obstacles) {
+        if (pointInPolygon(n.lon, n.lat, poly)) {
+          isInside = true;
+          break;
+        }
+      }
+      if (isInside) blockedNode[i] = 1;
     }
     for (let aId = 0; aId < adjacency.length; aId++) {
       const list = adjacency[aId] || [];
@@ -75,7 +83,6 @@ export function buildGraph(geojson, options = {}) {
   return { nodes, adjacency, nodeByKey, obstacles };
 }
 
-// Lightweight spatial index using lat/lon grid buckets for fast nearest-node lookups.
 export function buildSpatialIndex(nodes, cellDeg = 0.01) {
   const buckets = new Map();
   function bucketKey(lon, lat) {
@@ -138,43 +145,4 @@ export function buildSpatialIndex(nodes, cellDeg = 0.01) {
     },
     cellDeg,
   };
-}
-
-// Compute nearest point on a segment AB to point P in lon/lat plane
-export function nearestPointOnSegment(px, py, ax, ay, bx, by) {
-  const vx = bx - ax;
-  const vy = by - ay;
-  const wx = px - ax;
-  const wy = py - ay;
-  const denom = vx * vx + vy * vy;
-  let t = 0;
-  if (denom > 0) t = (wx * vx + wy * vy) / denom;
-  if (t < 0) t = 0; else if (t > 1) t = 1;
-  const x = ax + t * vx;
-  const y = ay + t * vy;
-  const dx = x - px;
-  const dy = y - py;
-  return { t, x, y, dist2: dx * dx + dy * dy };
-}
-
-// Snap an arbitrary lon/lat to the nearest point on any graph edge
-export function snapToNearestEdge(graph, lon, lat) {
-  const { nodes, adjacency } = graph || {};
-  if (!nodes || !adjacency || !nodes.length) return null;
-  let best = null;
-  let bestDist2 = Infinity;
-  for (let aId = 0; aId < nodes.length; aId++) {
-    const a = nodes[aId];
-    const neighbors = adjacency[aId] || [];
-    for (const { to: bId } of neighbors) {
-      if (bId <= aId) continue; // avoid double-counting edges
-      const b = nodes[bId];
-      const { t, x, y, dist2 } = nearestPointOnSegment(lon, lat, a.lon, a.lat, b.lon, b.lat);
-      if (dist2 < bestDist2) {
-        bestDist2 = dist2;
-        best = { aId, bId, t, point: [x, y], dist2 };
-      }
-    }
-  }
-  return best;
 }

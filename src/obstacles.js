@@ -93,36 +93,3 @@ export function segmentIntersectsAnyObstacle(a, b, obstacles) {
   }
   return false;
 }
-
-export function coordInAnyObstacle(coord, obstacles) {
-  const [lon, lat] = coord;
-  for (const poly of obstacles || []) {
-    if (pointInPolygon(lon, lat, poly)) return true;
-  }
-  return false;
-}
-
-function segmentsIntersect(ax, ay, bx, by, cx, cy, dx, dy) {
-  const o1 = orientation(ax, ay, bx, by, cx, cy);
-  const o2 = orientation(ax, ay, bx, by, dx, dy);
-  const o3 = orientation(cx, cy, dx, dy, ax, ay);
-  const o4 = orientation(cx, cy, dx, dy, bx, by);
-  if (o1 !== o2 && o3 !== o4) return true;
-  // Colinear cases
-  if (o1 === 0 && onSegment(ax, ay, cx, cy, bx, by)) return true;
-  if (o2 === 0 && onSegment(ax, ay, dx, dy, bx, by)) return true;
-  if (o3 === 0 && onSegment(cx, cy, ax, ay, dx, dy)) return true;
-  if (o4 === 0 && onSegment(cx, cy, bx, by, dx, dy)) return true;
-  return false;
-}
-
-function orientation(ax, ay, bx, by, cx, cy) {
-  const val = (by - ay) * (cx - bx) - (bx - ax) * (cy - by);
-  if (Math.abs(val) < 1e-12) return 0; // colinear
-  return val > 0 ? 1 : 2; // 1: clockwise, 2: counterclockwise
-}
-
-function onSegment(ax, ay, cx, cy, bx, by) {
-  return Math.min(ax, bx) - 1e-12 <= cx && cx <= Math.max(ax, bx) + 1e-12 &&
-         Math.min(ay, by) - 1e-12 <= cy && cy <= Math.max(ay, by) + 1e-12;
-}
