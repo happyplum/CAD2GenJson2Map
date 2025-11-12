@@ -16,7 +16,7 @@
  */
 
 import { haversineDistance, roundCoordKey } from './geo.js'
-import { extractObstaclesFromGeoJSON, segmentIntersectsAnyObstacle, pointInPolygon } from './obstacles.js'
+import { extractObstaclesFromGeoJSON, segmentIntersectsPolygon, pointInPolygon } from './obstacles.js'
 
 /**
  * 从GeoJSON数据构建障碍图
@@ -28,10 +28,11 @@ import { extractObstaclesFromGeoJSON, segmentIntersectsAnyObstacle, pointInPolyg
  * @param {Function} [options.obstacleClassifier] - 自定义障碍物分类器
  * @returns {Object} 构建好的障碍图对象，包含nodes(节点数组)、adjacency(邻接表)、nodeByKey(节点映射)和obstacles(障碍物数组)
  */
-export function buildObstacleGraph(geojson, options = {}) {
+export async function buildObstacleGraph(geojson, options = {}) {
   // 解析选项参数
   const precision = options.precision ?? 6;
   const includeObstacles = options.includeObstacles ?? true;
+  const filterEdges = options.filterEdges ?? true;
   
   // 初始化图数据结构
   const nodeByKey = new Map(); // 坐标键到节点ID的映射，用于节点去重
@@ -40,6 +41,33 @@ export function buildObstacleGraph(geojson, options = {}) {
   
   // 提取障碍物多边形
   const obstacles = includeObstacles ? extractObstaclesFromGeoJSON(geojson, options) : [];
+
+  // 预计算每个障碍的包围盒，用于快速剔除
+  function bboxOfRings(rings) {
+    let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity;
+    for (const ring of rings) {
+      for (const [lon, lat] of ring) {
+        if (lon < minLon) minLon = lon;
+        if (lon > maxLon) maxLon = lon;
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+      }
+    }
+    return { minLon, minLat, maxLon, maxLat };
+  }
+  const obstaclesMeta = obstacles.map(rings => ({ rings, bbox: bboxOfRings(rings) }));
+
+  function segBbox(ax, ay, bx, by) {
+    return {
+      minLon: Math.min(ax, bx),
+      maxLon: Math.max(ax, bx),
+      minLat: Math.min(ay, by),
+      maxLat: Math.max(ay, by),
+    };
+  }
+  function bboxIntersects(a, b) {
+    return !(a.minLon > b.maxLon || a.maxLon < b.minLon || a.minLat > b.maxLat || a.maxLat < b.minLat);
+  }
 
   /**
    * 添加节点到图中
@@ -111,7 +139,7 @@ export function buildObstacleGraph(geojson, options = {}) {
   }
 
   // 构建障碍图：识别障碍物并构建可通行区域图
-  if (obstacles.length) {
+  if (obstacles.length && filterEdges) {
     // 标记位于障碍物内部的节点（这些节点不可通行）
     const blockedNode = new Uint8Array(nodes.length);
     for (let i = 0; i < nodes.length; i++) {
@@ -132,18 +160,32 @@ export function buildObstacleGraph(geojson, options = {}) {
       const list = adjacency[aId] || [];
       const a = nodes[aId];
       const filtered = [];
-      
+
       // 检查每条边是否穿过障碍物或连接到障碍物内部节点
       for (const { to: bId, w } of list) {
         // 如果任一端点在障碍物内部，跳过该边（不可通行）
         if (blockedNode[aId] || blockedNode[bId]) continue;
-        
+
         const b = nodes[bId];
-        // 检查边是否与任何障碍物相交（穿过障碍物的边不可通行）
-        const intersects = segmentIntersectsAnyObstacle([a.lon, a.lat], [b.lon, b.lat], obstacles);
-        if (!intersects) filtered.push({ to: bId, w });
+        // 先用包围盒快速剔除，再做几何相交
+        const sb = segBbox(a.lon, a.lat, b.lon, b.lat);
+        let maybe = false;
+        for (const om of obstaclesMeta) {
+          if (bboxIntersects(sb, om.bbox)) { maybe = true; break; }
+        }
+        if (!maybe) {
+          filtered.push({ to: bId, w });
+        } else {
+          let intersects = false;
+          for (const om of obstaclesMeta) {
+            if (!bboxIntersects(sb, om.bbox)) continue;
+            if (segmentIntersectsPolygon([a.lon, a.lat], [b.lon, b.lat], om.rings)) { intersects = true; break; }
+          }
+          if (!intersects) filtered.push({ to: bId, w });
+        }
       }
       adjacency[aId] = filtered;
+      if (aId % 200 === 0) await Promise.resolve();
     }
   }
 
