@@ -44,6 +44,7 @@
         @click="onCanvasClick"
         :style="{ cursor: picking ? 'crosshair' : 'default' }"
       ></canvas>
+      <div class="path-status" v-if="pathStatusText">{{ pathStatusText }}</div>
     </section>
   </div>
 </template>
@@ -75,6 +76,7 @@ const obstacleMetaCache = ref(null);
 const wallMetaCache = ref(null);
 const workerRef = ref(null);
 const busy = ref(false);
+const pathStatusText = ref(''); // 路径计算状态提示文本
 function safeClone(data) {
   try {
     // eslint-disable-next-line no-undef
@@ -127,7 +129,10 @@ async function build() {
     picking.value = "start";
   } catch (e) {
     console.error(e);
-    alert(e.message);
+    pathStatusText.value = e.message;
+    setTimeout(() => {
+      pathStatusText.value = '';
+    }, 3000);
   } finally {
     loading.value = false;
   }
@@ -235,7 +240,10 @@ function onCanvasClick(ev) {
   }
 
   if (isInsideAnyObstacle(lon, lat)) {
-    alert("该位置在障碍区域内，无法作为起终点");
+    pathStatusText.value = "该位置在障碍区域内，无法作为起终点";
+    setTimeout(() => {
+      pathStatusText.value = '';
+    }, 3000);
     return;
   }
 
@@ -513,7 +521,10 @@ function computeAndDrawPath() {
     return;
   }
   if (isInsideAnyObstacle(startLon.value, startLat.value) || isInsideAnyObstacle(endLon.value, endLat.value)) {
-    alert("起点或终点在障碍区域内");
+    pathStatusText.value = "起点或终点在障碍区域内";
+    setTimeout(() => {
+      pathStatusText.value = '';
+    }, 3000);
     drawNetwork();
     return;
   }
@@ -523,21 +534,63 @@ function computeAndDrawPath() {
   if (!workerRef.value) workerRef.value = new Worker(new URL('./pathWorker.js', import.meta.url), { type: 'module' });
   busy.value = true;
   const t0 = performance.now();
-  const timer = setTimeout(() => { busy.value = false; alert('路径计算超时'); }, 15000);
+  // 初始设置15秒超时
+  let timer = setTimeout(() => {
+      busy.value = false;
+      pathStatusText.value = '路径计算超时';
+      setTimeout(() => {
+        pathStatusText.value = '';
+      }, 3000);
+    }, 15000);
+
   workerRef.value.onmessage = (ev) => {
-    clearTimeout(timer);
-    busy.value = false;
-    const data = ev.data;
-    if (!data.ok) {
-      alert(data.error === 'nearby-grid-fail' ? '无法找到附近可通行格点' : '未找到可通行路径');
+      const data = ev.data;
+
+      // 处理延长计算时间的消息
+      if (data.type === 'extending_computation') {
+        // 清除当前的超时计时器
+        clearTimeout(timer);
+        // 延长超时时间（增加30秒）
+        timer = setTimeout(() => {
+          busy.value = false;
+          pathStatusText.value = '路径计算超时';
+          setTimeout(() => {
+            pathStatusText.value = '';
+          }, 3000);
+        }, 30000);
+        // 在控制台显示延长计算的消息
+        console.log(data.message);
+        // 添加UI提示
+        pathStatusText.value = data.message || '路径搜索延长计算时间，正在尝试寻找可行路径...';
+        return; // 不执行后续逻辑，等待最终结果
+      }
+
+      // 处理最终的路径计算结果
+      clearTimeout(timer);
+      busy.value = false;
+
+      if (!data.ok) {
+        pathStatusText.value = data.error === 'nearby-grid-fail' ? '无法找到附近可通行格点' : '未找到可通行路径';
+    setTimeout(() => {
+      pathStatusText.value = '';
+    }, 3000);
+        drawNetwork();
+        return;
+      }
+      console.log('路径计算结果:', data.path);
+      pathPoints.value = data.path;
       drawNetwork();
-      return;
-    }
-    pathPoints.value = data.path;
-    drawNetwork();
-    const t1 = performance.now();
-    console.log('路径计算耗时(ms):', Math.round(t1 - t0));
-  };
+
+      // 计算结束后的文字提示
+      pathStatusText.value = '路径计算成功完成！';
+      // 3秒后自动清除提示
+      setTimeout(() => {
+        pathStatusText.value = '';
+      }, 3000);
+
+      const t1 = performance.now();
+      console.log('路径计算耗时(ms):', Math.round(t1 - t0));
+    };
   const payload = {
     startLon: Number(startLon.value),
     startLat: Number(startLat.value),
@@ -552,7 +605,10 @@ function computeAndDrawPath() {
   } catch (e) {
     clearTimeout(timer);
     busy.value = false;
-    alert('浏览器消息序列化失败，已取消路径计算');
+    pathStatusText.value = '浏览器消息序列化失败，已取消路径计算';
+    setTimeout(() => {
+      pathStatusText.value = '';
+    }, 3000);
     console.error(e);
   }
 }
@@ -601,6 +657,19 @@ button {
 }
 .canvas-wrap {
   border: 1px solid #ddd;
+  margin-top: 20px;
+  position: relative;
+}
+.path-status {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background-color: rgba(0, 128, 0, 0.8);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 14px;
+  z-index: 10;
 }
 .pick-state {
   margin-left: 12px;
