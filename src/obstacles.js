@@ -2,13 +2,14 @@
  * 障碍物处理模块
  * 
  * 该模块提供从GeoJSON数据中提取障碍物多边形的功能，以及与障碍物相关的几何计算。
- * 主要用于路网构建过程中过滤掉穿过障碍物的边和移除位于障碍物内部的节点。
+ * 主要用于障碍图构建过程中识别障碍物、构建可通行区域图。
  * 
  * 主要功能：
  * 1. 从GeoJSON特征集合中提取障碍物多边形
- * 2. 判断点是否在多边形内部
- * 3. 判断线段是否与多边形相交
+ * 2. 判断点是否在多边形内部（障碍物区域）
+ * 3. 判断线段是否与多边形相交（穿过障碍物）
  * 4. 判断线段是否与任何障碍物相交
+ * 5. 支持障碍图构建中的可通行性分析
  * 
  * 坐标系统：使用经纬度坐标 [longitude, latitude]
  * 多边形表示：多边形由环(rings)组成，每个环是[lon, lat]坐标数组
@@ -18,14 +19,14 @@
 // Polygons are represented as arrays of rings; each ring is an array of [lon, lat] coordinates.
 
 /**
- * 从GeoJSON特征集合中提取障碍物多边形
+ * 从GeoJSON特征集合中提取障碍物多边形（用于障碍图构建）
  * 
  * @param {Object} geojson - GeoJSON格式的数据，包含features数组
  * @param {Object} options - 可选配置项
  * @param {Function} options.isObstacle - 自定义障碍物判断函数，接收feature参数，返回boolean
- * @returns {Array} 障碍物多边形数组，每个障碍物是一个多边形环数组
+ * @returns {Array} 障碍物多边形数组，每个障碍物是一个多边形环数组，用于构建可通行区域图
  * 
- * 障碍物识别标准：
+ * 障碍物识别标准（用于障碍图构建）：
  * - properties.walkable === false
  * - properties.blocked === true
  * - properties.type === 'obstacle' (不区分大小写)
@@ -136,15 +137,15 @@ function pointInRing(lon, lat, ring) {
 }
 
 /**
- * 判断线段是否与多边形相交
+ * 判断线段是否与多边形相交（用于障碍图构建中的可通行性检查）
  * 检查两种情况：
- * 1. 线段的任一端点位于多边形内部
- * 2. 线段与多边形的任何边相交
+ * 1. 线段的任一端点位于多边形内部（障碍物区域）
+ * 2. 线段与多边形的任何边相交（穿过障碍物边界）
  * 
  * @param {Array} a - 线段起点坐标 [lon, lat]
  * @param {Array} b - 线段终点坐标 [lon, lat]
- * @param {Array} polygonRings - 多边形环数组，每个环是[lon, lat]坐标数组
- * @returns {boolean} 如果线段与多边形相交返回true，否则返回false
+ * @param {Array} polygonRings - 障碍物多边形环数组，每个环是[lon, lat]坐标数组
+ * @returns {boolean} 如果线段与障碍物相交返回true（不可通行），否则返回false
  */
 export function segmentIntersectsPolygon(a, b, polygonRings) {
   const [ax, ay] = a, [bx, by] = b;
@@ -230,13 +231,13 @@ function onSegment(ax, ay, cx, cy, bx, by) {
 }
 
 /**
- * 判断线段是否与任何障碍物相交
+ * 判断线段是否与任何障碍物相交（用于障碍图构建中的可通行性检查）
  * 遍历所有障碍物多边形，检查线段是否与其中任何一个相交
  * 
  * @param {Array} a - 线段起点坐标 [lon, lat]
  * @param {Array} b - 线段终点坐标 [lon, lat]
  * @param {Array} obstacles - 障碍物多边形数组，每个障碍物是多边形环数组
- * @returns {boolean} 如果线段与任何障碍物相交返回true，否则返回false
+ * @returns {boolean} 如果线段与任何障碍物相交返回true（不可通行），否则返回false
  */
 export function segmentIntersectsAnyObstacle(a, b, obstacles) {
   for (const poly of obstacles || []) {

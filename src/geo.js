@@ -2,14 +2,13 @@
  * 地理坐标处理模块
  * 
  * 该模块提供地理坐标相关的工具函数，包括距离计算、坐标处理和投影转换。
- * 主要用于路网分析中的距离计算和地图可视化中的坐标转换。
+ * 主要用于障碍图构建中的距离计算和地图可视化中的坐标转换。
  * 
  * 主要功能：
- * 1. 使用Haversine公式计算两点间的大圆距离
- * 2. 坐标精度控制和键值生成
- * 3. 简单的等距矩形投影转换
- * 4. 节点边界框计算
- * 5. 画布适配变换计算
+ * 1. 使用Haversine公式计算两点间的大圆距离（用于边权重计算）
+ * 2. 坐标精度控制和键值生成（用于节点去重）
+ * 3. 节点边界框计算（用于画布适配）
+ * 4. 画布适配变换计算（用于障碍图可视化）
  * 
  * 坐标系统：使用经纬度坐标 [longitude, latitude]
  * 距离单位：米(m)
@@ -64,23 +63,10 @@ export function roundCoordKey([lon, lat], precision = 6) {
 }
 
 /**
- * 等距矩形投影转换
- * 将地理坐标直接映射为平面坐标，适用于小区域的可视化
- * 注意：这种投影会保持经纬度的比例关系，但在大范围区域会产生明显变形
- * 
- * @param {Array<number>} coord - 地理坐标 [经度, 纬度]
- * @returns {Object} 投影后的平面坐标 { x: 经度, y: 纬度 }
- */
-// Equirectangular projection (sufficient for small area visualization)
-export function projectXY([lon, lat]) {
-  return { x: lon, y: lat };
-}
-
-/**
- * 从节点数组计算边界框
+ * 从障碍图节点数组计算边界框
  * 遍历所有节点，找出最小和最大的经纬度值，形成包围所有节点的矩形区域
  * 
- * @param {Array<Object>} nodes - 节点数组，每个节点应包含lon和lat属性
+ * @param {Array<Object>} nodes - 障碍图节点数组，每个节点应包含lon和lat属性
  * @returns {Object} 边界框对象，包含 { minLon, minLat, maxLon, maxLat }
  */
 export function bboxFromNodes(nodes) {
@@ -99,10 +85,10 @@ export function bboxFromNodes(nodes) {
 }
 
 /**
- * 计算将地理边界框适配到画布的变换参数
- * 计算缩放比例和平移参数，使地理坐标能够完整显示在指定大小的画布中
+ * 计算将地理边界框适配到画布的变换参数（用于障碍图可视化）
+ * 计算缩放比例和平移参数，使障碍图能够完整显示在指定大小的画布中
  * 
- * @param {Object} bbox - 地理边界框，包含 { minLon, minLat, maxLon, maxLat }
+ * @param {Object} bbox - 障碍图地理边界框，包含 { minLon, minLat, maxLon, maxLat }
  * @param {number} width - 画布宽度（像素）
  * @param {number} height - 画布高度（像素）
  * @param {number} [padding=20] - 画布边距（像素），默认为20

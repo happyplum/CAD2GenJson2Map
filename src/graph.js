@@ -1,14 +1,15 @@
 /**
- * 路网图构建模块
+ * 障碍图构建模块
  * 
- * 该模块提供从GeoJSON数据构建路网图的功能，以及空间索引的构建和查询。
- * 主要用于将线段数据转换为图结构，并支持障碍物过滤和空间查询。
+ * 该模块提供从GeoJSON数据构建障碍图的功能，以及空间索引的构建和查询。
+ * 主要用于将线段数据转换为障碍图结构，识别障碍物并构建可通行区域图。
  * 
  * 主要功能：
- * 1. 从GeoJSON线段数据构建无向图
- * 2. 支持障碍物过滤，移除穿障边和障内节点
- * 3. 构建空间索引用于快速最近邻查询
- * 4. 提供节点和边的邻接表表示
+ * 1. 从GeoJSON线段数据构建障碍图
+ * 2. 识别和提取障碍物多边形
+ * 3. 构建可通行区域的图结构
+ * 4. 支持空间索引用于快速最近邻查询
+ * 5. 提供节点和边的邻接表表示
  * 
  * 坐标系统：使用经纬度坐标 [longitude, latitude]
  * 图结构：使用邻接表表示，节点包含ID和坐标，边包含权重(距离)
@@ -18,16 +19,16 @@ import { haversineDistance, roundCoordKey } from './geo.js'
 import { extractObstaclesFromGeoJSON, segmentIntersectsAnyObstacle, pointInPolygon } from './obstacles.js'
 
 /**
- * 从GeoJSON数据构建路网图
+ * 从GeoJSON数据构建障碍图
  * 
  * @param {Object} geojson - GeoJSON对象，包含线段和障碍物数据
  * @param {Object} [options={}] - 构建选项
  * @param {number} [options.precision=6] - 坐标精度，用于节点去重
  * @param {boolean} [options.includeObstacles=true] - 是否包含障碍物处理
  * @param {Function} [options.obstacleClassifier] - 自定义障碍物分类器
- * @returns {Object} 构建好的图对象，包含nodes(节点数组)、adjacency(邻接表)、nodeByKey(节点映射)和obstacles(障碍物数组)
+ * @returns {Object} 构建好的障碍图对象，包含nodes(节点数组)、adjacency(邻接表)、nodeByKey(节点映射)和obstacles(障碍物数组)
  */
-export function buildGraph(geojson, options = {}) {
+export function buildObstacleGraph(geojson, options = {}) {
   // 解析选项参数
   const precision = options.precision ?? 6;
   const includeObstacles = options.includeObstacles ?? true;
@@ -109,9 +110,9 @@ export function buildGraph(geojson, options = {}) {
     }
   }
 
-  // 使用障碍物过滤图：移除穿过障碍物的边和位于障碍物内部的节点
+  // 构建障碍图：识别障碍物并构建可通行区域图
   if (obstacles.length) {
-    // 标记位于障碍物内部的节点
+    // 标记位于障碍物内部的节点（这些节点不可通行）
     const blockedNode = new Uint8Array(nodes.length);
     for (let i = 0; i < nodes.length; i++) {
       const n = nodes[i];
@@ -126,7 +127,7 @@ export function buildGraph(geojson, options = {}) {
       if (isInside) blockedNode[i] = 1;
     }
     
-    // 过滤邻接表，移除穿障边和连接到障碍物内部节点的边
+    // 过滤邻接表，构建可通行区域图：移除穿障边和障碍物内部节点
     for (let aId = 0; aId < adjacency.length; aId++) {
       const list = adjacency[aId] || [];
       const a = nodes[aId];
@@ -134,11 +135,11 @@ export function buildGraph(geojson, options = {}) {
       
       // 检查每条边是否穿过障碍物或连接到障碍物内部节点
       for (const { to: bId, w } of list) {
-        // 如果任一端点在障碍物内部，跳过该边
+        // 如果任一端点在障碍物内部，跳过该边（不可通行）
         if (blockedNode[aId] || blockedNode[bId]) continue;
         
         const b = nodes[bId];
-        // 检查边是否与任何障碍物相交
+        // 检查边是否与任何障碍物相交（穿过障碍物的边不可通行）
         const intersects = segmentIntersectsAnyObstacle([a.lon, a.lat], [b.lon, b.lat], obstacles);
         if (!intersects) filtered.push({ to: bId, w });
       }
@@ -151,12 +152,12 @@ export function buildGraph(geojson, options = {}) {
 }
 
 /**
- * 构建空间索引用于快速最近邻查询
- * 使用网格分桶方法将节点分配到不同的地理网格中
+ * 构建空间索引用于快速最近邻查询（用于障碍图可视化中的点选功能）
+ * 使用网格分桶方法将节点分配到不同的地理网格中，支持在画布上点击选择起点/终点
  * 
- * @param {Array<Object>} nodes - 节点数组，每个节点包含 { id, lon, lat }
+ * @param {Array<Object>} nodes - 障碍图节点数组，每个节点包含 { id, lon, lat }
  * @param {number} [cellDeg=0.01] - 网格单元大小(度)，默认约1km
- * @returns {Object} 空间索引对象，包含nearest方法用于查询最近节点
+ * @returns {Object} 空间索引对象，包含nearest方法用于查询最近节点，支持障碍图交互
  */
 export function buildSpatialIndex(nodes, cellDeg = 0.01) {
   // 创建网格桶映射，键为网格坐标，值为该网格中的节点ID数组
@@ -211,13 +212,13 @@ export function buildSpatialIndex(nodes, cellDeg = 0.01) {
   // 返回空间索引对象
   return {
     /**
-     * 查找距离给定经纬度坐标最近的节点
-     * 使用渐进式扩展搜索半径的方法提高效率
+     * 查找距离给定经纬度坐标最近的节点（用于障碍图交互中的点选功能）
+     * 使用渐进式扩展搜索半径的方法提高效率，支持在画布上点击选择起点/终点
      * 
-     * @param {number} lon - 查询点的经度
-     * @param {number} lat - 查询点的纬度
+     * @param {number} lon - 查询点的经度（用户点击位置）
+     * @param {number} lat - 查询点的纬度（用户点击位置）
      * @param {number} [expandMax=10] - 最大扩展半径(网格数)
-     * @returns {number} 最近节点的ID，如果没有节点则返回-1
+     * @returns {number} 最近障碍图节点的ID，如果没有节点则返回-1
      */
     nearest(lon, lat, expandMax = 10) {
       // 计算查询点所在的网格坐标

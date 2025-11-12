@@ -1,7 +1,8 @@
 {
-  "name": "genjsonpa",
+  "name": "obstacle-graph-builder",
   "private": true,
   "version": "0.0.0",
+  "description": "GeoJSON障碍图构建工具 - 从地理数据构建可通行区域图结构",
   "type": "module",
   "scripts": {
     "dev": "vite",

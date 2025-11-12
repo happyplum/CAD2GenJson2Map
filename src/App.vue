@@ -1,7 +1,7 @@
 <template>
   <div class="container">
     <header>
-      <h1>GeoJSON 拓扑生成</h1>
+      <h1>GeoJSON 障碍图构建</h1>
       <div class="stats">
         <div>节点: {{ stats.nodes }}</div>
         <div>边: {{ stats.edges }}</div>
@@ -11,7 +11,7 @@
 
     <section class="controls">
       <div class="row">
-        <button :disabled="loading" @click="build">构建图结构</button>
+        <button :disabled="loading" @click="build">构建障碍图</button>
       </div>
       <div class="row">
         <label>起点经度</label>
@@ -50,7 +50,7 @@
 
 <script setup>
 import { ref, reactive } from "vue";
-import { buildGraph, buildSpatialIndex } from "./graph.js";
+import { buildObstacleGraph, buildSpatialIndex } from "./graph.js";
 import { bboxFromNodes, fitToCanvas } from "./geo.js";
 
 const canvasRef = ref(null);
@@ -80,7 +80,7 @@ async function build() {
   try {
     const t0 = performance.now();
     const geojson = await loadGeoJSON();
-    const g = buildGraph(geojson, { precision: 6, includeObstacles: true });
+    const g = buildObstacleGraph(geojson, { precision: 6, includeObstacles: true });
     graph.value = g;
     spatial.value = buildSpatialIndex(g.nodes, 0.01);
     const t1 = performance.now();
