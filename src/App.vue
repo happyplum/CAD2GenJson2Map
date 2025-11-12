@@ -250,9 +250,13 @@ function onCanvasClick(ev) {
     // 选完终点退出选择
     picking.value = null;
   }
-  computeAndDrawPath();
-
   console.log(`选择了点:`, { lon, lat });
+
+  drawNetwork();
+
+  if ((startLon.value !== 0 || startLat.value !== 0) && (endLon.value !== 0 || endLat.value !== 0)) {
+    computeAndDrawPath();
+  }
 }
 
 function isInsideAnyObstacle(lon, lat) {
@@ -500,6 +504,10 @@ function aStarGrid(startIdx, goalIdx) {
 
 function computeAndDrawPath() {
   pathPoints.value = [];
+  // 只有当起点和终点都被设置（都不为0）时才进行计算
+  if ((startLon.value === 0 && startLat.value === 0) || (endLon.value === 0 && endLat.value === 0)) {
+    return;
+  }
   if (!isFinite(startLon.value) || !isFinite(startLat.value) || !isFinite(endLon.value) || !isFinite(endLat.value)) {
     drawNetwork();
     return;
@@ -515,7 +523,7 @@ function computeAndDrawPath() {
   if (!workerRef.value) workerRef.value = new Worker(new URL('./pathWorker.js', import.meta.url), { type: 'module' });
   busy.value = true;
   const t0 = performance.now();
-  const timer = setTimeout(() => { busy.value = false; alert('路径计算超时'); }, 8000);
+  const timer = setTimeout(() => { busy.value = false; alert('路径计算超时'); }, 15000);
   workerRef.value.onmessage = (ev) => {
     clearTimeout(timer);
     busy.value = false;
