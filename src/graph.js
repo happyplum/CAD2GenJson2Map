@@ -152,12 +152,12 @@ export function buildObstacleGraph(geojson, options = {}) {
 }
 
 /**
- * 构建空间索引用于快速最近邻查询（用于障碍图可视化中的点选功能）
- * 使用网格分桶方法将节点分配到不同的地理网格中，支持在画布上点击选择起点/终点
+ * 构建空间索引用于障碍图交互中的快速节点查询
+ * 提供高效的最近邻节点查找，用于用户点击画布选择实际的障碍图节点
  * 
  * @param {Array<Object>} nodes - 障碍图节点数组，每个节点包含 { id, lon, lat }
  * @param {number} [cellDeg=0.01] - 网格单元大小(度)，默认约1km
- * @returns {Object} 空间索引对象，包含nearest方法用于查询最近节点，支持障碍图交互
+ * @returns {Object} 空间索引对象，包含nearest方法用于查询最近节点
  */
 export function buildSpatialIndex(nodes, cellDeg = 0.01) {
   // 创建网格桶映射，键为网格坐标，值为该网格中的节点ID数组
@@ -212,11 +212,11 @@ export function buildSpatialIndex(nodes, cellDeg = 0.01) {
   // 返回空间索引对象
   return {
     /**
-     * 查找距离给定经纬度坐标最近的节点（用于障碍图交互中的点选功能）
-     * 使用渐进式扩展搜索半径的方法提高效率，支持在画布上点击选择起点/终点
+     * 查找距离给定经纬度坐标最近的障碍图节点
+     * 用于用户点击画布选择实际的障碍图节点，确保起点/终点位于有效路径上
      * 
-     * @param {number} lon - 查询点的经度（用户点击位置）
-     * @param {number} lat - 查询点的纬度（用户点击位置）
+     * @param {number} lon - 用户点击位置的经度
+     * @param {number} lat - 用户点击位置的纬度
      * @param {number} [expandMax=10] - 最大扩展半径(网格数)
      * @returns {number} 最近障碍图节点的ID，如果没有节点则返回-1
      */

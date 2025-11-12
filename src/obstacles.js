@@ -1,32 +1,29 @@
 /**
  * 障碍物处理模块
  * 
- * 该模块提供从GeoJSON数据中提取障碍物多边形的功能，以及与障碍物相关的几何计算。
- * 主要用于障碍图构建过程中识别障碍物、构建可通行区域图。
+ * 该模块专门为障碍图构建提供必要的障碍物识别和几何计算功能。
+ * 主要负责识别障碍物区域并计算可通行路径。
  * 
  * 主要功能：
- * 1. 从GeoJSON特征集合中提取障碍物多边形
- * 2. 判断点是否在多边形内部（障碍物区域）
- * 3. 判断线段是否与多边形相交（穿过障碍物）
- * 4. 判断线段是否与任何障碍物相交
- * 5. 支持障碍图构建中的可通行性分析
+ * 1. 从GeoJSON数据中提取障碍物多边形
+ * 2. 判断点是否在障碍物内部（不可通行区域）
+ * 3. 判断路径线段是否穿过障碍物
+ * 4. 支持障碍图构建中的可通行性分析
  * 
  * 坐标系统：使用经纬度坐标 [longitude, latitude]
  * 多边形表示：多边形由环(rings)组成，每个环是[lon, lat]坐标数组
  */
 
-// Utilities for obstacle parsing and feasibility checks on GeoJSON
-// Polygons are represented as arrays of rings; each ring is an array of [lon, lat] coordinates.
-
 /**
- * 从GeoJSON特征集合中提取障碍物多边形（用于障碍图构建）
+ * 从GeoJSON数据中提取障碍物多边形
+ * 这是障碍图构建的核心步骤，用于识别不可通行的区域
  * 
  * @param {Object} geojson - GeoJSON格式的数据，包含features数组
  * @param {Object} options - 可选配置项
  * @param {Function} options.isObstacle - 自定义障碍物判断函数，接收feature参数，返回boolean
- * @returns {Array} 障碍物多边形数组，每个障碍物是一个多边形环数组，用于构建可通行区域图
+ * @returns {Array} 障碍物多边形数组，每个障碍物是一个多边形环数组
  * 
- * 障碍物识别标准（用于障碍图构建）：
+ * 障碍物识别标准：
  * - properties.walkable === false
  * - properties.blocked === true
  * - properties.type === 'obstacle' (不区分大小写)
@@ -95,13 +92,13 @@ function normalizePolygonRings(coords) {
 }
 
 /**
- * 使用射线投射算法判断点是否在多边形内部
- * 支持带孔洞的多边形，任何环(外环或内环)都视为不可通行区域
+ * 判断点是否在障碍物多边形内部
+ * 用于障碍图构建中的节点筛选，识别不可通行的节点
  * 
  * @param {number} lon - 点的经度
  * @param {number} lat - 点的纬度
- * @param {Array} polygonRings - 多边形环数组，每个环是[lon, lat]坐标数组
- * @returns {boolean} 如果点在任何环内返回true，否则返回false
+ * @param {Array} polygonRings - 障碍物多边形环数组，每个环是[lon, lat]坐标数组
+ * @returns {boolean} 如果点在障碍物内部（不可通行）返回true，否则返回false
  */
 export function pointInPolygon(lon, lat, polygonRings) {
   for (const ring of polygonRings) {
@@ -137,15 +134,13 @@ function pointInRing(lon, lat, ring) {
 }
 
 /**
- * 判断线段是否与多边形相交（用于障碍图构建中的可通行性检查）
- * 检查两种情况：
- * 1. 线段的任一端点位于多边形内部（障碍物区域）
- * 2. 线段与多边形的任何边相交（穿过障碍物边界）
+ * 判断路径线段是否穿过障碍物
+ * 用于障碍图构建中的边筛选，识别不可通行的路径
  * 
- * @param {Array} a - 线段起点坐标 [lon, lat]
- * @param {Array} b - 线段终点坐标 [lon, lat]
+ * @param {Array} a - 路径起点坐标 [lon, lat]
+ * @param {Array} b - 路径终点坐标 [lon, lat]
  * @param {Array} polygonRings - 障碍物多边形环数组，每个环是[lon, lat]坐标数组
- * @returns {boolean} 如果线段与障碍物相交返回true（不可通行），否则返回false
+ * @returns {boolean} 如果路径穿过障碍物（不可通行）返回true，否则返回false
  */
 export function segmentIntersectsPolygon(a, b, polygonRings) {
   const [ax, ay] = a, [bx, by] = b;
@@ -231,13 +226,13 @@ function onSegment(ax, ay, cx, cy, bx, by) {
 }
 
 /**
- * 判断线段是否与任何障碍物相交（用于障碍图构建中的可通行性检查）
- * 遍历所有障碍物多边形，检查线段是否与其中任何一个相交
+ * 判断路径线段是否穿过任何障碍物
+ * 障碍图构建的关键函数，用于快速筛选可通行的路径边
  * 
- * @param {Array} a - 线段起点坐标 [lon, lat]
- * @param {Array} b - 线段终点坐标 [lon, lat]
- * @param {Array} obstacles - 障碍物多边形数组，每个障碍物是多边形环数组
- * @returns {boolean} 如果线段与任何障碍物相交返回true（不可通行），否则返回false
+ * @param {Array} a - 路径起点坐标 [lon, lat]
+ * @param {Array} b - 路径终点坐标 [lon, lat]
+ * @param {Array} obstacles - 障碍物多边形数组
+ * @returns {boolean} 如果路径穿过任何障碍物（不可通行）返回true，否则返回false
  */
 export function segmentIntersectsAnyObstacle(a, b, obstacles) {
   for (const poly of obstacles || []) {

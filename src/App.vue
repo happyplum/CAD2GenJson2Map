@@ -50,13 +50,12 @@
 
 <script setup>
 import { ref, reactive } from "vue";
-import { buildObstacleGraph, buildSpatialIndex } from "./graph.js";
+import { buildObstacleGraph } from "./graph.js";
 import { bboxFromNodes, fitToCanvas } from "./geo.js";
 
 const canvasRef = ref(null);
 const ctxRef = ref(null);
 const graph = ref(null);
-const spatial = ref(null);
 const graphReady = ref(false);
 const loading = ref(false);
 
@@ -82,7 +81,7 @@ async function build() {
     const geojson = await loadGeoJSON();
     const g = buildObstacleGraph(geojson, { precision: 6, includeObstacles: true });
     graph.value = g;
-    spatial.value = buildSpatialIndex(g.nodes, 0.01);
+
     const t1 = performance.now();
     stats.nodes = g.nodes.length;
     stats.edges = g.adjacency.reduce((s, a) => s + a.length, 0) / 2;
@@ -171,11 +170,15 @@ function onCanvasClick(ev) {
   const y = ev.clientY - rect.top;
   const lon = (x - view.tx) / view.scale;
   const lat = (y - view.ty) / view.scale;
+  
+  // 直接使用用户点击的坐标作为点
+  
   // 若未显式进入选择模式，默认按"起点→终点"轮换
   if (!picking.value) {
-    picking.value =
+    picking.value = 
       !isFinite(startLon.value) || !isFinite(startLat.value) ? "start" : "end";
   }
+  
   if (picking.value === "start") {
     startLon.value = lon;
     startLat.value = lat;
@@ -188,6 +191,59 @@ function onCanvasClick(ev) {
     picking.value = null;
   }
   drawNetwork();
+  
+  console.log(`选择了点:`, { lon, lat });
+}
+
+// 计算路径
+function calculatePath() {
+  if (!graphReady.value || !isFinite(startLon.value) || !isFinite(startLat.value) || !isFinite(endLon.value) || !isFinite(endLat.value)) {
+    return;
+  }
+  
+  console.log(`计算从点 (${startLon.value}, ${startLat.value}) 到点 (${endLon.value}, ${endLat.value}) 的路径`);
+  
+  // 直接连接起点和终点，不使用图结构中的节点
+  const pathCoordinates = [[startLon.value, startLat.value], [endLon.value, endLat.value]];
+  
+  // 构建路径GeoJSON
+  const pathGeoJSON = {
+    type: 'Feature',
+    geometry: {
+      type: 'LineString',
+      coordinates: pathCoordinates
+    },
+    properties: {
+      name: '路径'
+    }
+  };
+  
+  // 绘制路径
+  drawPath(pathGeoJSON);
+}
+
+// 绘制路径
+function drawPath(pathGeoJSON) {
+  if (!ctxRef.value || !pathGeoJSON) return;
+  
+  const ctx = ctxRef.value;
+  const coords = pathGeoJSON.geometry.coordinates;
+  
+  ctx.save();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = '#ff9f1c';
+  ctx.beginPath();
+  
+  const firstPoint = toScreen(coords[0][0], coords[0][1]);
+  ctx.moveTo(firstPoint.x, firstPoint.y);
+  
+  for (let i = 1; i < coords.length; i++) {
+    const point = toScreen(coords[i][0], coords[i][1]);
+    ctx.lineTo(point.x, point.y);
+  }
+  
+  ctx.stroke();
+  ctx.restore();
 }
 </script>
 

@@ -1,13 +1,12 @@
 /**
  * 地理坐标处理模块
  * 
- * 该模块提供地理坐标相关的工具函数，包括距离计算、坐标处理和投影转换。
- * 主要用于障碍图构建中的距离计算和地图可视化中的坐标转换。
+ * 该模块为障碍图构建提供必要的地理计算功能，专注于距离计算和坐标处理。
  * 
  * 主要功能：
  * 1. 使用Haversine公式计算两点间的大圆距离（用于边权重计算）
- * 2. 坐标精度控制和键值生成（用于节点去重）
- * 3. 节点边界框计算（用于画布适配）
+ * 2. 坐标精度控制和键值生成（用于障碍图节点去重）
+ * 3. 节点边界框计算（用于障碍图显示）
  * 4. 画布适配变换计算（用于障碍图可视化）
  * 
  * 坐标系统：使用经纬度坐标 [longitude, latitude]
@@ -18,8 +17,8 @@
 const R = 6371000; // Earth radius in meters
 
 /**
- * 使用Haversine公式计算两点间的大圆距离
- * Haversine公式考虑了地球的曲率，适用于计算任意两点间的球面距离
+ * 使用Haversine公式计算障碍图中两点间的大圆距离
+ * 用于为障碍图的边分配权重，表示路径的实际长度
  * 
  * @param {Array<number>} a - 第一个点的坐标 [经度, 纬度]
  * @param {Array<number>} b - 第二个点的坐标 [经度, 纬度]
@@ -52,7 +51,7 @@ export function haversineDistance(a, b) {
 
 /**
  * 将地理坐标四舍五入到指定精度并生成键值
- * 用于节点去重和快速查找，相同位置的坐标将生成相同的键
+ * 用于障碍图中的节点去重，避免创建重复的位置节点
  * 
  * @param {Array<number>} coord - 地理坐标 [经度, 纬度]
  * @param {number} [precision=6] - 小数点后保留的位数，默认为6位
@@ -63,10 +62,10 @@ export function roundCoordKey([lon, lat], precision = 6) {
 }
 
 /**
- * 从障碍图节点数组计算边界框
- * 遍历所有节点，找出最小和最大的经纬度值，形成包围所有节点的矩形区域
+ * 计算障碍图节点的地理边界框
+ * 确定障碍图的地理范围，用于可视化显示
  * 
- * @param {Array<Object>} nodes - 障碍图节点数组，每个节点应包含lon和lat属性
+ * @param {Array<Object>} nodes - 障碍图节点数组，每个节点包含lon和lat属性
  * @returns {Object} 边界框对象，包含 { minLon, minLat, maxLon, maxLat }
  */
 export function bboxFromNodes(nodes) {
@@ -85,17 +84,14 @@ export function bboxFromNodes(nodes) {
 }
 
 /**
- * 计算将地理边界框适配到画布的变换参数（用于障碍图可视化）
- * 计算缩放比例和平移参数，使障碍图能够完整显示在指定大小的画布中
+ * 计算将障碍图适配到画布的变换参数
+ * 确保整个障碍图能够完整清晰地显示在画布中
  * 
  * @param {Object} bbox - 障碍图地理边界框，包含 { minLon, minLat, maxLon, maxLat }
  * @param {number} width - 画布宽度（像素）
  * @param {number} height - 画布高度（像素）
  * @param {number} [padding=20] - 画布边距（像素），默认为20
  * @returns {Object} 变换参数，包含 { scale, tx, ty }
- *                   scale: 缩放比例
- *                   tx: x方向平移量
- *                   ty: y方向平移量
  */
 export function fitToCanvas(bbox, width, height, padding = 20) {
   // 计算可用画布区域（减去边距）
