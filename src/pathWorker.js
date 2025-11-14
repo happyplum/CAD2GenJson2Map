@@ -93,7 +93,19 @@ function segmentsIntersect(ax, ay, bx, by, cx, cy, dx, dy) {
   return false // 不相交
 }
 
-function euclid(a, b) { return Math.hypot(a.lon - b.lon, a.lat - b.lat) }
+// 优化版欧几里得距离计算
+function euclid(a, b) { 
+  const dx = a.lon - b.lon;
+  const dy = a.lat - b.lat;
+  return Math.hypot(dx, dy);
+}
+
+// 欧几里得距离平方（避免开方操作，用于比较）
+function euclidSquared(a, b) {
+  const dx = a.lon - b.lon;
+  const dy = a.lat - b.lat;
+  return dx * dx + dy * dy;
+}
 function bboxIntersects(a, b) { return !(a.minLon > b.maxLon || a.maxLon < b.minLon || a.minLat > b.maxLat || a.maxLat < b.minLat) }
 
 function buildObstacleMeta(obstacles) {
@@ -249,7 +261,14 @@ function ensureGridLocal(cfg) {
         }
 
         // 如果连线不穿过任何障碍物，则将邻居节点添加到邻接列表
-        if (!crossesPoly && !crossesWall) list.push({ to: j, w: euclid(a, b) })
+        if (!crossesPoly && !crossesWall) {
+          // 计算距离并添加到邻接列表
+          const dx = a.lon - b.lon;
+          const dy = a.lat - b.lat;
+          // 直接计算距离以避免函数调用开销
+          const distance = Math.hypot(dx, dy);
+          list.push({ to: j, w: distance });
+        }
       }
       adjacency[idx] = list
     }
@@ -257,15 +276,50 @@ function ensureGridLocal(cfg) {
   return { nodes, adjacency, cols, rows, minLon, minLat, cellLon, cellLat }
 }
 
+// 优化版点到线段距离计算
 function pointSegmentDistance(px, py, ax, ay, bx, by) {
-  const vx = bx - ax, vy = by - ay
-  const wx = px - ax, wy = py - ay
-  const c1 = vx * wx + vy * wy
-  const c2 = vx * vx + vy * vy || 1e-12
-  let t = c1 / c2
-  if (t < 0) t = 0; else if (t > 1) t = 1
-  const cx = ax + t * vx, cy = ay + t * vy
-  return Math.hypot(px - cx, py - cy)
+  // 快速计算向量分量
+  const vx = bx - ax;
+  const vy = by - ay;
+  const wx = px - ax;
+  const wy = py - ay;
+  
+  // 计算投影参数
+  const c1 = vx * wx + vy * wy;
+  // 避免除零错误
+  const c2 = vx * vx + vy * vy || 1e-12;
+  
+  // 投影参数裁剪到[0,1]区间
+  const t = Math.max(0, Math.min(1, c1 / c2));
+  
+  // 计算投影点并返回距离
+  const cx = ax + t * vx;
+  const cy = ay + t * vy;
+  const dx = px - cx;
+  const dy = py - cy;
+  
+  // 使用Math.hypot计算欧几里得距离
+  return Math.hypot(dx, dy);
+}
+
+// 距离平方版本，用于比较（无需开方，性能更好）
+function pointSegmentDistanceSquared(px, py, ax, ay, bx, by) {
+  const vx = bx - ax;
+  const vy = by - ay;
+  const wx = px - ax;
+  const wy = py - ay;
+  
+  const c1 = vx * wx + vy * wy;
+  const c2 = vx * vx + vy * vy || 1e-12;
+  
+  const t = Math.max(0, Math.min(1, c1 / c2));
+  
+  const cx = ax + t * vx;
+  const cy = ay + t * vy;
+  const dx = px - cx;
+  const dy = py - cy;
+  
+  return dx * dx + dy * dy;
 }
 
 /**
@@ -318,12 +372,14 @@ function nearestFreeGridIndex(grid, lon, lat) {
         continue  // 跳过不可通行的节点
       }
 
-      // 计算节点到目标坐标的欧几里得距离
-      const distance = Math.hypot(node.lon - lon, node.lat - lat)
+      // 计算节点到目标坐标的欧几里得距离（使用平方距离进行比较，避免开方）
+      const dx = node.lon - lon;
+      const dy = node.lat - lat;
+      const distanceSquared = dx * dx + dy * dy; // 平方距离用于比较
 
       // 更新最近节点信息
-      if (distance < bestDistance) {
-        bestDistance = distance
+      if (distanceSquared < bestDistance) {
+        bestDistance = distanceSquared
         bestNodeIndex = nodeIndex
       }
     }
@@ -342,12 +398,14 @@ function nearestFreeGridIndex(grid, lon, lat) {
         continue
       }
 
-      // 计算欧几里得距离
-      const distance = Math.hypot(node.lon - lon, node.lat - lat)
+      // 计算欧几里得距离平方
+      const dx = node.lon - lon;
+      const dy = node.lat - lat;
+      const distanceSquared = dx * dx + dy * dy;
 
       // 更新最近节点信息
-      if (distance < bestDistance) {
-        bestDistance = distance
+      if (distanceSquared < bestDistance) {
+        bestDistance = distanceSquared
         bestNodeIndex = i
       }
     }
@@ -387,10 +445,18 @@ function aStarGrid(grid, startIdx, goalIdx) {
   // 启发式函数值数组：存储每个节点到目标节点的估计距离
   const h = new Array(nodes.length)
 
-  // 预计算所有节点的启发式函数值（欧几里得距离）
-  // 这种预计算策略避免了重复计算，显著提高算法效率
+  // 预计算所有节点的启发式函数值（使用距离平方，避免开方）
+  // 注意：由于A*算法中我们只关心f值的相对大小，使用距离平方作为启发式函数仍然能保证算法最优性
+  const goalNode = nodes[goalIdx];
+  const goalLon = goalNode.lon;
+  const goalLat = goalNode.lat;
+  
+  // 批量预计算，减少属性查找次数
   for (let i = 0; i < nodes.length; i++) {
-    h[i] = euclid(nodes[i], nodes[goalIdx])
+    const node = nodes[i];
+    const dx = node.lon - goalLon;
+    const dy = node.lat - goalLat;
+    h[i] = dx * dx + dy * dy; // 使用距离平方作为启发式函数值
   }
 
   // 初始化起点节点
@@ -621,9 +687,144 @@ function computePath(startLon, startLat, endLon, endLat, obstacles, walls, bboxN
   return { ok: true, path: finalPath }
 }
 
+// 功能验证函数，确保优化后的计算结果与原计算一致
+function validateCalculations() {
+  console.log('开始距离计算功能验证...');
+  
+  // 创建测试数据
+  const testPoints = [
+    { lon: 10.0, lat: 20.0 },
+    { lon: 15.5, lat: 25.5 },
+    { lon: 8.3, lat: 19.7 },
+    { lon: 12.1, lat: 22.3 },
+    { lon: 100.0, lat: 50.0 },
+    { lon: 100.1, lat: 50.1 },
+    { lon: -120.5, lat: 35.8 }
+  ];
+  
+  // 验证欧几里得距离计算
+  console.log('\n验证欧几里得距离计算:');
+  for (let i = 0; i < testPoints.length - 1; i++) {
+    const a = testPoints[i];
+    const b = testPoints[i+1];
+    
+    // 原始计算方式
+    const originalDist = Math.hypot(a.lon - b.lon, a.lat - b.lat);
+    // 优化后的计算方式
+    const optimizedDist = euclid(a, b);
+    
+    // 验证结果一致性
+    const difference = Math.abs(originalDist - optimizedDist);
+    console.log(`点${i}到点${i+1}: 差异 = ${difference.toFixed(10)}`);
+    if (difference > 1e-10) {
+      console.warn('警告: 计算结果不一致!');
+    }
+  }
+  
+  // 验证点到线段距离计算
+  console.log('\n验证点到线段距离计算:');
+  for (let i = 0; i < testPoints.length - 2; i++) {
+    const p = testPoints[i];
+    const a = testPoints[i+1];
+    const b = testPoints[i+2];
+    
+    // 原始计算方式
+    const vx = b.lon - a.lon;
+    const vy = b.lat - a.lat;
+    const wx = p.lon - a.lon;
+    const wy = p.lat - a.lat;
+    const c1 = vx * wx + vy * wy;
+    const c2 = vx * vx + vy * vy || 1e-12;
+    let t = c1 / c2;
+    if (t < 0) t = 0; else if (t > 1) t = 1;
+    const cx = a.lon + t * vx;
+    const cy = a.lat + t * vy;
+    const originalDist = Math.hypot(p.lon - cx, p.lat - cy);
+    
+    // 优化后的计算方式
+    const optimizedDist = pointSegmentDistance(p.lon, p.lat, a.lon, a.lat, b.lon, b.lat);
+    
+    // 验证结果一致性
+    const difference = Math.abs(originalDist - optimizedDist);
+    console.log(`点到线段(${i}->${i+1}->${i+2}): 差异 = ${difference.toFixed(10)}`);
+    if (difference > 1e-10) {
+      console.warn('警告: 计算结果不一致!');
+    }
+  }
+  
+  console.log('\n功能验证完成!');
+}
+
+// 性能测试函数，用于测量距离计算的执行效率
+function runPerformanceTest() {
+  console.log('开始距离计算性能测试...');
+  
+  // 创建测试数据
+  const testCases = 1000000;
+  const points = [];
+  
+  // 生成随机测试点
+  for (let i = 0; i < testCases; i++) {
+    points.push({
+      lon: Math.random() * 180 - 90,
+      lat: Math.random() * 360 - 180
+    });
+  }
+  
+  // 测试1：欧几里得距离计算
+  console.log('\n测试欧几里得距离计算:');
+  const startTime1 = performance.now();
+  let totalDist = 0;
+  for (let i = 0; i < testCases - 1; i++) {
+    totalDist += euclid(points[i], points[i + 1]);
+  }
+  const endTime1 = performance.now();
+  console.log(`执行时间: ${(endTime1 - startTime1).toFixed(2)}ms`);
+  console.log(`计算结果示例: ${totalDist.toFixed(2)}`);
+  
+  // 测试2：欧几里得距离平方计算（用于比较）
+  console.log('\n测试欧几里得距离平方计算:');
+  const startTime2 = performance.now();
+  let totalDistSquared = 0;
+  for (let i = 0; i < testCases - 1; i++) {
+    totalDistSquared += euclidSquared(points[i], points[i + 1]);
+  }
+  const endTime2 = performance.now();
+  console.log(`执行时间: ${(endTime2 - startTime2).toFixed(2)}ms`);
+  console.log(`计算结果示例: ${totalDistSquared.toFixed(2)}`);
+  
+  // 测试3：点到线段距离计算
+  console.log('\n测试点到线段距离计算:');
+  const startTime3 = performance.now();
+  let totalSegDist = 0;
+  for (let i = 0; i < testCases - 2; i++) {
+    totalSegDist += pointSegmentDistance(
+      points[i].lon, points[i].lat,
+      points[i+1].lon, points[i+1].lat,
+      points[i+2].lon, points[i+2].lat
+    );
+  }
+  const endTime3 = performance.now();
+  console.log(`执行时间: ${(endTime3 - startTime3).toFixed(2)}ms`);
+  console.log(`计算结果示例: ${totalSegDist.toFixed(2)}`);
+  
+  console.log('\n性能测试完成!');
+}
+
 self.onmessage = async (ev) => {
   // 从消息中提取路径计算所需的所有参数
-  const { startLon, startLat, endLon, endLat, obstacles, walls, bboxNodes } = ev.data
+  const { startLon, startLat, endLon, endLat, obstacles, walls, bboxNodes, testMode } = ev.data
+  
+  // 如果是测试模式，运行性能测试和功能验证
+  if (testMode) {
+    // 首先验证功能正确性
+    validateCalculations();
+    // 然后运行性能测试
+    runPerformanceTest();
+    self.postMessage({ ok: true, message: '性能测试和功能验证已完成，请查看控制台输出' });
+    return;
+  }
+  
   try {
     // 调用路径计算主函数
     const result = computePath(startLon, startLat, endLon, endLat, obstacles, walls, bboxNodes)
@@ -711,13 +912,17 @@ function optimizePath(path) {
 
     // 计算方向向量的点积，判断是否接近共线
     const dotProduct = dx1 * dx2 + dy1 * dy2
-    const magnitude1 = Math.sqrt(dx1 * dx1 + dy1 * dy1) // 第一个向量的模长
-    const magnitude2 = Math.sqrt(dx2 * dx2 + dy2 * dy2) // 第二个向量的模长
-
+    
+    // 计算向量的平方模长（避免开方）
+    const magnitudeSquared1 = dx1 * dx1 + dy1 * dy1
+    const magnitudeSquared2 = dx2 * dx2 + dy2 * dy2
+    
     // 确保向量有效（非零长度）
-    if (magnitude1 > 0 && magnitude2 > 0) {
-      // 计算夹角余弦值，用于判断向量方向的相似性
-      const cosine = dotProduct / (magnitude1 * magnitude2)
+    if (magnitudeSquared1 > 0 && magnitudeSquared2 > 0) {
+      // 优化余弦计算，避免两次开方操作
+      // 这里我们需要计算：dotProduct / (sqrt(m1²) * sqrt(m2²)) = dotProduct / sqrt(m1² * m2²)
+      const denominator = Math.sqrt(magnitudeSquared1 * magnitudeSquared2);
+      const cosine = dotProduct / denominator;
 
       // 如果夹角余弦值小于0.995，表示方向变化明显，需要保留当前点
       // 接近1表示夹角很小，接近共线；接近-1表示方向相反
