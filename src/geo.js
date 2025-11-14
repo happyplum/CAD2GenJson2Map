@@ -42,7 +42,8 @@ export function haversineDistance(a, b) {
 
   // Haversine公式核心计算
   // s = sin²(Δφ/2) + cos(φ1) * cos(φ2) * sin²(Δλ/2)
-  const s = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+  const s =
+    Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
 
   // 计算最终距离：2 * R * arcsin(min(1, sqrt(s)))
   // 使用min确保数值稳定性，避免浮点误差导致sqrt(s) > 1
@@ -52,7 +53,7 @@ export function haversineDistance(a, b) {
 /**
  * 计算三个点的转向方向
  * 用于检测线段之间的相交关系和转向判断
- * 
+ *
  * @param {number} ax - 第一个点的x坐标（经度）
  * @param {number} ay - 第一个点的y坐标（纬度）
  * @param {number} bx - 第二个点的x坐标（经度）
@@ -91,7 +92,10 @@ export function roundCoordKey([lon, lat], precision = 6) {
  */
 export function bboxFromNodes(nodes) {
   // 初始化边界值为极值
-  let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity;
+  let minLon = Infinity,
+    minLat = Infinity,
+    maxLon = -Infinity,
+    maxLat = -Infinity;
 
   // 遍历所有节点，更新边界值
   for (const n of nodes) {

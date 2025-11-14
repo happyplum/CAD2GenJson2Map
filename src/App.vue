@@ -54,7 +54,7 @@
 import { ref, reactive } from "vue";
 import { buildObstacleGraph } from "./graph.js";
 import { bboxFromNodes, fitToCanvas } from "./geo.js";
-import {  pointInPolygon, segmentIntersectsPolygon } from "./obstacles.js";
+import { pointInPolygon, segmentIntersectsPolygon } from "./obstacles.js";
 
 const canvasRef = ref(null);
 const ctxRef = ref(null);
@@ -77,7 +77,7 @@ const obstacleMetaCache = ref(null);
 const wallMetaCache = ref(null);
 const workerRef = ref(null);
 const busy = ref(false);
-const pathStatusText = ref(''); // 路径计算状态提示文本
+const pathStatusText = ref(""); // 路径计算状态提示文本
 function safeClone(data) {
   try {
     // eslint-disable-next-line no-undef
@@ -88,11 +88,16 @@ function safeClone(data) {
 }
 function toPlainObstacles(obstacles) {
   const arr = Array.isArray(obstacles) ? obstacles : [];
-  return arr.map(rings => rings.map(r => r.map(([lon, lat]) => [Number(lon), Number(lat)])));
+  return arr.map((rings) =>
+    rings.map((r) => r.map(([lon, lat]) => [Number(lon), Number(lat)])),
+  );
 }
 function toPlainWalls(walls) {
   const arr = Array.isArray(walls) ? walls : [];
-  return arr.map(seg => [[Number(seg[0][0]), Number(seg[0][1])], [Number(seg[1][0]), Number(seg[1][1])]]);
+  return arr.map((seg) => [
+    [Number(seg[0][0]), Number(seg[0][1])],
+    [Number(seg[1][0]), Number(seg[1][1])],
+  ]);
 }
 
 async function loadGeoJSON() {
@@ -132,7 +137,7 @@ async function build() {
     console.error(e);
     pathStatusText.value = e.message;
     setTimeout(() => {
-      pathStatusText.value = '';
+      pathStatusText.value = "";
     }, 3000);
   } finally {
     loading.value = false;
@@ -243,7 +248,7 @@ function onCanvasClick(ev) {
   if (isInsideAnyObstacle(lon, lat)) {
     pathStatusText.value = "该位置在障碍区域内，无法作为起终点";
     setTimeout(() => {
-      pathStatusText.value = '';
+      pathStatusText.value = "";
     }, 3000);
     return;
   }
@@ -263,8 +268,11 @@ function onCanvasClick(ev) {
 
   drawNetwork();
 
-  if ((startLon.value !== 0 || startLat.value !== 0) && (endLon.value !== 0 || endLat.value !== 0)) {
-    pathStatusText.value = '开始路径计算';
+  if (
+    (startLon.value !== 0 || startLat.value !== 0) &&
+    (endLon.value !== 0 || endLat.value !== 0)
+  ) {
+    pathStatusText.value = "开始路径计算";
     computeAndDrawPath();
   }
 }
@@ -295,8 +303,16 @@ function ensureGrid() {
   let maxLon = Math.max(startLon.value, endLon.value);
   let minLat = Math.min(startLat.value, endLat.value);
   let maxLat = Math.max(startLat.value, endLat.value);
-  if (!isFinite(minLon) || !isFinite(minLat) || !isFinite(maxLon) || !isFinite(maxLat)) {
-    minLon = bboxNodes.minLon; maxLon = bboxNodes.maxLon; minLat = bboxNodes.minLat; maxLat = bboxNodes.maxLat;
+  if (
+    !isFinite(minLon) ||
+    !isFinite(minLat) ||
+    !isFinite(maxLon) ||
+    !isFinite(maxLat)
+  ) {
+    minLon = bboxNodes.minLon;
+    maxLon = bboxNodes.maxLon;
+    minLat = bboxNodes.minLat;
+    maxLat = bboxNodes.maxLat;
   }
   let lonSpan = maxLon - minLon;
   let latSpan = maxLat - minLat;
@@ -322,8 +338,11 @@ function ensureGrid() {
   const blocked = [];
   const eps = Math.min(cellLon, cellLat) * 0.3;
   if (!obstacleMetaCache.value) {
-    obstacleMetaCache.value = (obstacles || []).map(rings => {
-      let mLon = Infinity, mLat = Infinity, xLon = -Infinity, xLat = -Infinity;
+    obstacleMetaCache.value = (obstacles || []).map((rings) => {
+      let mLon = Infinity,
+        mLat = Infinity,
+        xLon = -Infinity,
+        xLat = -Infinity;
       for (const ring of rings) {
         for (const [lo, la] of ring) {
           if (lo < mLon) mLon = lo;
@@ -332,17 +351,35 @@ function ensureGrid() {
           if (la > xLat) xLat = la;
         }
       }
-      return { rings, bbox: { minLon: mLon, minLat: mLat, maxLon: xLon, maxLat: xLat } };
+      return {
+        rings,
+        bbox: { minLon: mLon, minLat: mLat, maxLon: xLon, maxLat: xLat },
+      };
     });
   }
   if (!wallMetaCache.value) {
-    wallMetaCache.value = (wallSegments.value || []).map(seg => {
-      const a = seg[0], b = seg[1];
-      return { a, b, bbox: { minLon: Math.min(a[0], b[0]), maxLon: Math.max(a[0], b[0]), minLat: Math.min(a[1], b[1]), maxLat: Math.max(a[1], b[1]) } };
+    wallMetaCache.value = (wallSegments.value || []).map((seg) => {
+      const a = seg[0],
+        b = seg[1];
+      return {
+        a,
+        b,
+        bbox: {
+          minLon: Math.min(a[0], b[0]),
+          maxLon: Math.max(a[0], b[0]),
+          minLat: Math.min(a[1], b[1]),
+          maxLat: Math.max(a[1], b[1]),
+        },
+      };
     });
   }
   function bboxIntersects(a, b) {
-    return !(a.minLon > b.maxLon || a.maxLon < b.minLon || a.minLat > b.maxLat || a.maxLat < b.minLat);
+    return !(
+      a.minLon > b.maxLon ||
+      a.maxLon < b.minLon ||
+      a.minLat > b.maxLat ||
+      a.maxLat < b.minLat
+    );
   }
   for (let r = 0; r <= rows; r++) {
     for (let c = 0; c <= cols; c++) {
@@ -352,8 +389,17 @@ function ensureGrid() {
       nodes.push({ id: idx, lon, lat });
       let inside = false;
       for (const om of obstacleMetaCache.value) {
-        if (!bboxIntersects({ minLon: lon, maxLon: lon, minLat: lat, maxLat: lat }, om.bbox)) continue;
-        if (pointInPolygon(lon, lat, om.rings)) { inside = true; break; }
+        if (
+          !bboxIntersects(
+            { minLon: lon, maxLon: lon, minLat: lat, maxLat: lat },
+            om.bbox,
+          )
+        )
+          continue;
+        if (pointInPolygon(lon, lat, om.rings)) {
+          inside = true;
+          break;
+        }
       }
       if (!inside && isOnAnyWall(lon, lat, eps)) inside = true;
       blocked[idx] = inside ? 1 : 0;
@@ -361,32 +407,66 @@ function ensureGrid() {
   }
   const adjacency = new Array(nodes.length);
   const dirs = [
-    [0, 1], [1, 0], [0, -1], [-1, 0],
-    [1, 1], [1, -1], [-1, 1], [-1, -1]
+    [0, 1],
+    [1, 0],
+    [0, -1],
+    [-1, 0],
+    [1, 1],
+    [1, -1],
+    [-1, 1],
+    [-1, -1],
   ];
   for (let r = 0; r <= rows; r++) {
     for (let c = 0; c <= cols; c++) {
       const idx = r * (cols + 1) + c;
       const list = [];
-      if (blocked[idx]) { adjacency[idx] = list; continue; }
+      if (blocked[idx]) {
+        adjacency[idx] = list;
+        continue;
+      }
       const a = nodes[idx];
       for (const [dr, dc] of dirs) {
-        const nr = r + dr, nc = c + dc;
+        const nr = r + dr,
+          nc = c + dc;
         if (nr < 0 || nr > rows || nc < 0 || nc > cols) continue;
         const j = nr * (cols + 1) + nc;
         if (blocked[j]) continue;
         const b = nodes[j];
-        const sb = { minLon: Math.min(a.lon, b.lon), maxLon: Math.max(a.lon, b.lon), minLat: Math.min(a.lat, b.lat), maxLat: Math.max(a.lat, b.lat) };
+        const sb = {
+          minLon: Math.min(a.lon, b.lon),
+          maxLon: Math.max(a.lon, b.lon),
+          minLat: Math.min(a.lat, b.lat),
+          maxLat: Math.max(a.lat, b.lat),
+        };
         let crossesPoly = false;
         for (const om of obstacleMetaCache.value) {
           if (!bboxIntersects(sb, om.bbox)) continue;
-          if (segmentIntersectsPolygon([a.lon, a.lat], [b.lon, b.lat], om.rings)) { crossesPoly = true; break; }
+          if (
+            segmentIntersectsPolygon([a.lon, a.lat], [b.lon, b.lat], om.rings)
+          ) {
+            crossesPoly = true;
+            break;
+          }
         }
         let crossesWall = false;
         if (!crossesPoly) {
           for (const wm of wallMetaCache.value) {
             if (!bboxIntersects(sb, wm.bbox)) continue;
-            if (segmentsIntersect(a.lon, a.lat, b.lon, b.lat, wm.a[0], wm.a[1], wm.b[0], wm.b[1])) { crossesWall = true; break; }
+            if (
+              segmentsIntersect(
+                a.lon,
+                a.lat,
+                b.lon,
+                b.lat,
+                wm.a[0],
+                wm.a[1],
+                wm.b[0],
+                wm.b[1],
+              )
+            ) {
+              crossesWall = true;
+              break;
+            }
           }
         }
         if (!crossesPoly && !crossesWall) list.push({ to: j, w: euclid(a, b) });
@@ -394,7 +474,16 @@ function ensureGrid() {
       adjacency[idx] = list;
     }
   }
-  gridCache.value = { nodes, adjacency, cols, rows, minLon, minLat, cellLon, cellLat };
+  gridCache.value = {
+    nodes,
+    adjacency,
+    cols,
+    rows,
+    minLon,
+    minLat,
+    cellLon,
+    cellLat,
+  };
   return gridCache.value;
 }
 
@@ -406,10 +495,12 @@ function buildWallSegments(geojson) {
     if (!g) continue;
     if (g.type === "LineString") {
       const coords = g.coordinates || [];
-      for (let i = 0; i < coords.length - 1; i++) segs.push([coords[i], coords[i + 1]]);
+      for (let i = 0; i < coords.length - 1; i++)
+        segs.push([coords[i], coords[i + 1]]);
     } else if (g.type === "MultiLineString") {
       for (const line of g.coordinates || []) {
-        for (let i = 0; i < line.length - 1; i++) segs.push([line[i], line[i + 1]]);
+        for (let i = 0; i < line.length - 1; i++)
+          segs.push([line[i], line[i + 1]]);
       }
     }
   }
@@ -422,8 +513,12 @@ function orientation(ax, ay, bx, by, cx, cy) {
   return val > 0 ? 1 : 2;
 }
 function onSegment(ax, ay, cx, cy, bx, by) {
-  return Math.min(ax, bx) - 1e-12 <= cx && cx <= Math.max(ax, bx) + 1e-12 &&
-         Math.min(ay, by) - 1e-12 <= cy && cy <= Math.max(ay, by) + 1e-12;
+  return (
+    Math.min(ax, bx) - 1e-12 <= cx &&
+    cx <= Math.max(ax, bx) + 1e-12 &&
+    Math.min(ay, by) - 1e-12 <= cy &&
+    cy <= Math.max(ay, by) + 1e-12
+  );
 }
 function segmentsIntersect(ax, ay, bx, by, cx, cy, dx, dy) {
   const o1 = orientation(ax, ay, bx, by, cx, cy);
@@ -437,87 +532,39 @@ function segmentsIntersect(ax, ay, bx, by, cx, cy, dx, dy) {
   if (o4 === 0 && onSegment(cx, cy, bx, by, dx, dy)) return true;
   return false;
 }
-function segmentIntersectsAnyWall(a, b) {
-  const [ax, ay] = a, [bx, by] = b;
-  for (const seg of wallSegments.value || []) {
-    const c = seg[0], d = seg[1];
-    if (segmentsIntersect(ax, ay, bx, by, c[0], c[1], d[0], d[1])) return true;
-  }
-  return false;
-}
 function pointSegmentDistance(px, py, ax, ay, bx, by) {
-  const vx = bx - ax, vy = by - ay;
-  const wx = px - ax, wy = py - ay;
+  const vx = bx - ax,
+    vy = by - ay;
+  const wx = px - ax,
+    wy = py - ay;
   const c1 = vx * wx + vy * wy;
   const c2 = vx * vx + vy * vy || 1e-12;
   let t = c1 / c2;
-  if (t < 0) t = 0; else if (t > 1) t = 1;
-  const cx = ax + t * vx, cy = ay + t * vy;
+  if (t < 0) t = 0;
+  else if (t > 1) t = 1;
+  const cx = ax + t * vx,
+    cy = ay + t * vy;
   return Math.hypot(px - cx, py - cy);
 }
 function isOnAnyWall(lon, lat, eps = 1e-6) {
   for (const seg of wallSegments.value || []) {
-    const a = seg[0], b = seg[1];
-    if (pointSegmentDistance(lon, lat, a[0], a[1], b[0], b[1]) <= eps) return true;
+    const a = seg[0],
+      b = seg[1];
+    if (pointSegmentDistance(lon, lat, a[0], a[1], b[0], b[1]) <= eps)
+      return true;
   }
   return false;
 }
 
-function nearestFreeGridIndex(lon, lat) {
-  const grid = ensureGrid();
-  let best = -1;
-  let bestD = Infinity;
-  for (let i = 0; i < grid.nodes.length; i++) {
-    const n = grid.nodes[i];
-    const d = Math.hypot(n.lon - lon, n.lat - lat);
-    if (d < bestD && grid.adjacency[i] && grid.adjacency[i].length) { bestD = d; best = i; }
-  }
-  return best;
-}
-
-function aStarGrid(startIdx, goalIdx) {
-  const grid = ensureGrid();
-  const nodes = grid.nodes;
-  const adj = grid.adjacency;
-  const open = new Set([startIdx]);
-  const came = new Map();
-  const g = new Map([[startIdx, 0]]);
-  const h = (i) => euclid(nodes[i], nodes[goalIdx]);
-  const f = new Map([[startIdx, h(startIdx)]]);
-  function popLowest() {
-    let m = null, mv = Infinity;
-    for (const i of open) { const v = f.get(i) ?? Infinity; if (v < mv) { mv = v; m = i; } }
-    return m;
-  }
-  while (open.size) {
-    const cur = popLowest();
-    if (cur === goalIdx) {
-      const path = [];
-      let x = cur;
-      while (x !== undefined) { path.push(nodes[x]); x = came.get(x); }
-      path.reverse();
-      return path;
-    }
-    open.delete(cur);
-    for (const { to, w } of adj[cur] || []) {
-      const tentative = (g.get(cur) ?? Infinity) + w;
-      if (tentative < (g.get(to) ?? Infinity)) {
-        came.set(to, cur);
-        g.set(to, tentative);
-        f.set(to, tentative + h(to));
-        open.add(to);
-      }
-    }
-  }
-  return null;
-}
-
 function runTestMode() {
   // 确保worker已创建
-  if (!workerRef.value) workerRef.value = new Worker(new URL('./pathWorker.js', import.meta.url), { type: 'module' });
+  if (!workerRef.value)
+    workerRef.value = new Worker(new URL("./pathWorker.js", import.meta.url), {
+      type: "module",
+    });
 
   busy.value = true;
-  pathStatusText.value = '正在执行性能测试...';
+  pathStatusText.value = "正在执行性能测试...";
 
   // 保存原始的onmessage处理函数
   const originalOnMessage = workerRef.value.onmessage;
@@ -527,8 +574,8 @@ function runTestMode() {
     const data = ev.data;
     busy.value = false;
 
-    if (data.type === 'test_result') {
-      console.log('性能测试结果:', data.results);
+    if (data.type === "test_result") {
+      console.log("性能测试结果:", data.results);
       pathStatusText.value = `性能测试完成！共执行${data.results.iterations}次测试`;
 
       // 在控制台展示详细测试结果
@@ -537,17 +584,17 @@ function runTestMode() {
       }
 
       if (data.results.validation && !data.results.validation.passed) {
-        console.error('功能验证失败:', data.results.validation.errors);
-        pathStatusText.value = '性能测试完成，但功能验证失败！';
+        console.error("功能验证失败:", data.results.validation.errors);
+        pathStatusText.value = "性能测试完成，但功能验证失败！";
       }
     } else {
-      console.error('未知的测试响应:', data);
-      pathStatusText.value = '性能测试失败！';
+      console.error("未知的测试响应:", data);
+      pathStatusText.value = "性能测试失败！";
     }
 
     // 3秒后自动清除提示
     setTimeout(() => {
-      pathStatusText.value = '';
+      pathStatusText.value = "";
     }, 3000);
 
     // 恢复原始的onmessage处理函数
@@ -559,7 +606,7 @@ function runTestMode() {
     workerRef.value.postMessage({ testMode: true });
   } catch (e) {
     busy.value = false;
-    pathStatusText.value = '发送测试消息失败';
+    pathStatusText.value = "发送测试消息失败";
     console.error(e);
     // 恢复原始的onmessage处理函数
     workerRef.value.onmessage = originalOnMessage;
@@ -569,84 +616,103 @@ function runTestMode() {
 function computeAndDrawPath() {
   pathPoints.value = [];
   // 只有当起点和终点都被设置（都不为0）时才进行计算
-  if ((startLon.value === 0 && startLat.value === 0) || (endLon.value === 0 && endLat.value === 0)) {
+  if (
+    (startLon.value === 0 && startLat.value === 0) ||
+    (endLon.value === 0 && endLat.value === 0)
+  ) {
     return;
   }
-  if (!isFinite(startLon.value) || !isFinite(startLat.value) || !isFinite(endLon.value) || !isFinite(endLat.value)) {
+  if (
+    !isFinite(startLon.value) ||
+    !isFinite(startLat.value) ||
+    !isFinite(endLon.value) ||
+    !isFinite(endLat.value)
+  ) {
     drawNetwork();
     return;
   }
-  if (isInsideAnyObstacle(startLon.value, startLat.value) || isInsideAnyObstacle(endLon.value, endLat.value)) {
+  if (
+    isInsideAnyObstacle(startLon.value, startLat.value) ||
+    isInsideAnyObstacle(endLon.value, endLat.value)
+  ) {
     pathStatusText.value = "起点或终点在障碍区域内";
     setTimeout(() => {
-      pathStatusText.value = '';
+      pathStatusText.value = "";
     }, 3000);
     drawNetwork();
     return;
   }
   const obstacles = graph.value?.obstacles || [];
-  if (!wallSegments.value.length && geojsonRef.value) wallSegments.value = buildWallSegments(geojsonRef.value);
+  if (!wallSegments.value.length && geojsonRef.value)
+    wallSegments.value = buildWallSegments(geojsonRef.value);
   const bboxNodes = bboxFromNodes(graph.value.nodes);
-  if (!workerRef.value) workerRef.value = new Worker(new URL('./pathWorker.js', import.meta.url), { type: 'module' });
+  if (!workerRef.value)
+    workerRef.value = new Worker(new URL("./pathWorker.js", import.meta.url), {
+      type: "module",
+    });
   busy.value = true;
   const t0 = performance.now();
   // 初始设置15秒超时
   let timer = setTimeout(() => {
-      busy.value = false;
-      pathStatusText.value = '路径计算超时';
-      setTimeout(() => {
-        pathStatusText.value = '';
-      }, 3000);
-    }, 15000);
+    busy.value = false;
+    pathStatusText.value = "路径计算超时";
+    setTimeout(() => {
+      pathStatusText.value = "";
+    }, 3000);
+  }, 15000);
 
   workerRef.value.onmessage = (ev) => {
-      const data = ev.data;
+    const data = ev.data;
 
-      // 处理延长计算时间的消息
-      if (data.type === 'extending_computation') {
-        // 清除当前的超时计时器
-        clearTimeout(timer);
-        // 延长超时时间（增加30秒）
-        timer = setTimeout(() => {
-          busy.value = false;
-          pathStatusText.value = '路径计算超时';
-          setTimeout(() => {
-            pathStatusText.value = '';
-          }, 3000);
-        }, 30000);
-        // 在控制台显示延长计算的消息
-        console.log(data.message);
-        // 添加UI提示
-        pathStatusText.value = data.message || '路径搜索延长计算时间，正在尝试寻找可行路径...';
-        return; // 不执行后续逻辑，等待最终结果
-      }
-
-      // 处理最终的路径计算结果
+    // 处理延长计算时间的消息
+    if (data.type === "extending_computation") {
+      // 清除当前的超时计时器
       clearTimeout(timer);
-      busy.value = false;
+      // 延长超时时间（增加30秒）
+      timer = setTimeout(() => {
+        busy.value = false;
+        pathStatusText.value = "路径计算超时";
+        setTimeout(() => {
+          pathStatusText.value = "";
+        }, 3000);
+      }, 30000);
+      // 在控制台显示延长计算的消息
+      console.log(data.message);
+      // 添加UI提示
+      pathStatusText.value =
+        data.message || "路径搜索延长计算时间，正在尝试寻找可行路径...";
+      return; // 不执行后续逻辑，等待最终结果
+    }
 
-      if (!data.ok) {
-        pathStatusText.value = data.error === 'nearby-grid-fail' ? '无法找到附近可通行格点' : '未找到可通行路径';
-    setTimeout(() => {
-      pathStatusText.value = '';
-    }, 3000);
-        drawNetwork();
-        return;
-      }
-      console.log('路径计算结果:', data.path);
-      pathPoints.value = data.path;
-      drawNetwork();
+    // 处理最终的路径计算结果
+    clearTimeout(timer);
+    busy.value = false;
 
-      // 计算结束后的文字提示
-      pathStatusText.value = '路径计算成功完成！';
-      // 3秒后自动清除提示
+    if (!data.ok) {
+      pathStatusText.value =
+        data.error === "nearby-grid-fail"
+          ? "无法找到附近可通行格点"
+          : "未找到可通行路径";
       setTimeout(() => {
-        pathStatusText.value = '';
+        pathStatusText.value = "";
       }, 3000);
+      drawNetwork();
+      return;
+    }
+    console.log("路径计算结果:", data.path);
+    pathPoints.value = data.path;
+    drawNetwork();
 
-      const t1 = performance.now();
-      console.log('路径计算耗时(ms):', Math.round(t1 - t0));
-    };
+    // 计算结束后的文字提示
+    pathStatusText.value = "路径计算成功完成！";
+    // 3秒后自动清除提示
+    setTimeout(() => {
+      pathStatusText.value = "";
+    }, 3000);
+
+    const t1 = performance.now();
+    console.log("路径计算耗时(ms):", Math.round(t1 - t0));
+  };
   const payload = {
     startLon: Number(startLon.value),
     startLat: Number(startLat.value),
@@ -661,9 +727,9 @@ function computeAndDrawPath() {
   } catch (e) {
     clearTimeout(timer);
     busy.value = false;
-    pathStatusText.value = '浏览器消息序列化失败，已取消路径计算';
+    pathStatusText.value = "浏览器消息序列化失败，已取消路径计算";
     setTimeout(() => {
-      pathStatusText.value = '';
+      pathStatusText.value = "";
     }, 3000);
     console.error(e);
   }
