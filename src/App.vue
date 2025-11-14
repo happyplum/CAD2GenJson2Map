@@ -12,6 +12,7 @@
     <section class="controls">
       <div class="row">
         <button :disabled="loading" @click="build">构建障碍图</button>
+        <button :disabled="busy" @click="runTestMode">运行性能测试</button>
       </div>
       <div class="row">
         <label>起点经度</label>
@@ -53,7 +54,7 @@
 import { ref, reactive } from "vue";
 import { buildObstacleGraph } from "./graph.js";
 import { bboxFromNodes, fitToCanvas } from "./geo.js";
-import { segmentIntersectsAnyObstacle, pointInPolygon, segmentIntersectsPolygon } from "./obstacles.js";
+import {  pointInPolygon, segmentIntersectsPolygon } from "./obstacles.js";
 
 const canvasRef = ref(null);
 const ctxRef = ref(null);
@@ -263,6 +264,7 @@ function onCanvasClick(ev) {
   drawNetwork();
 
   if ((startLon.value !== 0 || startLat.value !== 0) && (endLon.value !== 0 || endLat.value !== 0)) {
+    pathStatusText.value = '开始路径计算';
     computeAndDrawPath();
   }
 }
@@ -508,6 +510,60 @@ function aStarGrid(startIdx, goalIdx) {
     }
   }
   return null;
+}
+
+function runTestMode() {
+  // 确保worker已创建
+  if (!workerRef.value) workerRef.value = new Worker(new URL('./pathWorker.js', import.meta.url), { type: 'module' });
+
+  busy.value = true;
+  pathStatusText.value = '正在执行性能测试...';
+
+  // 保存原始的onmessage处理函数
+  const originalOnMessage = workerRef.value.onmessage;
+
+  // 设置临时的onmessage处理函数来处理测试结果
+  workerRef.value.onmessage = (ev) => {
+    const data = ev.data;
+    busy.value = false;
+
+    if (data.type === 'test_result') {
+      console.log('性能测试结果:', data.results);
+      pathStatusText.value = `性能测试完成！共执行${data.results.iterations}次测试`;
+
+      // 在控制台展示详细测试结果
+      for (const [name, time] of Object.entries(data.results.times)) {
+        console.log(`${name}: ${time.toFixed(3)} ms`);
+      }
+
+      if (data.results.validation && !data.results.validation.passed) {
+        console.error('功能验证失败:', data.results.validation.errors);
+        pathStatusText.value = '性能测试完成，但功能验证失败！';
+      }
+    } else {
+      console.error('未知的测试响应:', data);
+      pathStatusText.value = '性能测试失败！';
+    }
+
+    // 3秒后自动清除提示
+    setTimeout(() => {
+      pathStatusText.value = '';
+    }, 3000);
+
+    // 恢复原始的onmessage处理函数
+    workerRef.value.onmessage = originalOnMessage;
+  };
+
+  // 发送testMode消息到worker
+  try {
+    workerRef.value.postMessage({ testMode: true });
+  } catch (e) {
+    busy.value = false;
+    pathStatusText.value = '发送测试消息失败';
+    console.error(e);
+    // 恢复原始的onmessage处理函数
+    workerRef.value.onmessage = originalOnMessage;
+  }
 }
 
 function computeAndDrawPath() {

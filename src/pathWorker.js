@@ -689,6 +689,7 @@ function computePath(startLon, startLat, endLon, endLat, obstacles, walls, bboxN
 
 // 功能验证函数，确保优化后的计算结果与原计算一致
 function validateCalculations() {
+  const errors = [];
   console.log('开始距离计算功能验证...');
   
   // 创建测试数据
@@ -718,6 +719,7 @@ function validateCalculations() {
     console.log(`点${i}到点${i+1}: 差异 = ${difference.toFixed(10)}`);
     if (difference > 1e-10) {
       console.warn('警告: 计算结果不一致!');
+      errors.push(`欧几里得距离计算错误: 点${i}到点${i+1}差异过大`);
     }
   }
   
@@ -749,15 +751,35 @@ function validateCalculations() {
     console.log(`点到线段(${i}->${i+1}->${i+2}): 差异 = ${difference.toFixed(10)}`);
     if (difference > 1e-10) {
       console.warn('警告: 计算结果不一致!');
+      errors.push(`点到线段距离计算错误: 点${i}到线段(${i+1}->${i+2})差异过大`);
     }
   }
   
-  console.log('\n功能验证完成!');
+  const passed = errors.length === 0;
+  
+  if (passed) {
+    console.log('\n功能验证完成! 所有计算验证通过！');
+  } else {
+    console.error('\n功能验证完成! 计算验证失败:');
+    errors.forEach(err => console.error('-', err));
+  }
+  
+  // 返回验证结果对象
+  return {
+    passed: passed,
+    errors: errors
+  };
 }
 
 // 性能测试函数，用于测量距离计算的执行效率
 function runPerformanceTest() {
   console.log('开始距离计算性能测试...');
+  
+  // 创建结果对象
+  const results = {
+    iterations: 1000000,
+    times: {}
+  };
   
   // 创建测试数据
   const testCases = 1000000;
@@ -779,7 +801,9 @@ function runPerformanceTest() {
     totalDist += euclid(points[i], points[i + 1]);
   }
   const endTime1 = performance.now();
-  console.log(`执行时间: ${(endTime1 - startTime1).toFixed(2)}ms`);
+  const euclidTime = endTime1 - startTime1;
+  results.times['euclid'] = euclidTime;
+  console.log(`执行时间: ${euclidTime.toFixed(2)}ms`);
   console.log(`计算结果示例: ${totalDist.toFixed(2)}`);
   
   // 测试2：欧几里得距离平方计算（用于比较）
@@ -790,7 +814,9 @@ function runPerformanceTest() {
     totalDistSquared += euclidSquared(points[i], points[i + 1]);
   }
   const endTime2 = performance.now();
-  console.log(`执行时间: ${(endTime2 - startTime2).toFixed(2)}ms`);
+  const euclidSquaredTime = endTime2 - startTime2;
+  results.times['euclidSquared'] = euclidSquaredTime;
+  console.log(`执行时间: ${euclidSquaredTime.toFixed(2)}ms`);
   console.log(`计算结果示例: ${totalDistSquared.toFixed(2)}`);
   
   // 测试3：点到线段距离计算
@@ -805,10 +831,18 @@ function runPerformanceTest() {
     );
   }
   const endTime3 = performance.now();
-  console.log(`执行时间: ${(endTime3 - startTime3).toFixed(2)}ms`);
+  const pointSegmentTime = endTime3 - startTime3;
+  results.times['pointSegmentDistance'] = pointSegmentTime;
+  console.log(`执行时间: ${pointSegmentTime.toFixed(2)}ms`);
   console.log(`计算结果示例: ${totalSegDist.toFixed(2)}`);
   
+  // 计算性能提升比例
+  const euclidImprovement = ((euclidTime - euclidSquaredTime) / euclidTime * 100).toFixed(1);
+  results.times['euclidImprovementPercent'] = parseFloat(euclidImprovement);
+  
   console.log('\n性能测试完成!');
+  
+  return results;
 }
 
 self.onmessage = async (ev) => {
@@ -818,10 +852,19 @@ self.onmessage = async (ev) => {
   // 如果是测试模式，运行性能测试和功能验证
   if (testMode) {
     // 首先验证功能正确性
-    validateCalculations();
+    const validation = validateCalculations();
     // 然后运行性能测试
-    runPerformanceTest();
-    self.postMessage({ ok: true, message: '性能测试和功能验证已完成，请查看控制台输出' });
+    const results = runPerformanceTest();
+    
+    // 返回测试结果给主线程
+    self.postMessage({
+      type: 'test_result',
+      results: {
+        iterations: results.iterations,
+        times: results.times,
+        validation: validation
+      }
+    });
     return;
   }
   
